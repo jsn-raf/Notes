@@ -104,10 +104,6 @@
 </div>
 
 <script>
-    /* ---------------------------
-       STACK + NORMALISATION
-       --------------------------- */
-
     const stack = [
         "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
         "QC","8H","6S","7S","QS","AC","5C","3H","8D","4S","KH","JC",
@@ -146,10 +142,6 @@
         return rank + suit;
     }
 
-    /* ---------------------------
-       CORE LOGIC
-       --------------------------- */
-
     function revealMath() {
         const lines = noteContent.value
             .split('\n')
@@ -180,28 +172,17 @@
         document.activeElement.blur();
     }
 
-    /* ---------------------------
-       RESET (LONG PRESS)
-       --------------------------- */
-
-    let timer;
-    resetBtn.addEventListener("mousedown", () => timer = setTimeout(resetAll, 1000));
-    resetBtn.addEventListener("touchstart", () => timer = setTimeout(resetAll, 1000));
-    resetBtn.addEventListener("mouseup", () => clearTimeout(timer));
-    resetBtn.addEventListener("touchend", () => clearTimeout(timer));
+    // Single tap reset (no popup, no long-press)
+    resetBtn.addEventListener("click", resetAll);
 
     function resetAll() {
         noteContent.value = "";
         calcResult.style.display = "none";
-        alert("Note Archived");
     }
 
-    /* ---------------------------
-       SERVICE WORKER (CRITICAL)
-       --------------------------- */
-
+    // Service worker registration
     if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("/Card/sw.js");
+        navigator.serviceWorker.register("/Card/sw.js").catch(() => {});
     }
 </script>
 
