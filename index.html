@@ -37,6 +37,7 @@
   </div>
 
   <script>
+    // Mnemonica stack (1–52)
     const stack = [
       "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
       "QC","8H","6S","5S","9H","KC","2D","JH","3S","8S","6H","10C",
@@ -50,6 +51,7 @@
     function hideSync() { syncBtn.style.display = "none"; }
     function showSync() { syncBtn.style.display = ""; }
 
+    // Footer-only hide: does NOT restore Sync (auto-hide uses this)
     function hideFooterOnly() {
       if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
       outCard.innerText = "";
@@ -57,6 +59,7 @@
       calcResult.style.display = "none";
     }
 
+    // Full restore: ONLY called from the arrow
     function restoreAll() {
       hideFooterOnly();
       showSync();
@@ -69,7 +72,7 @@
       document.activeElement.blur();
 
       if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(hideFooterOnly, 10000);
+      hideTimer = setTimeout(hideFooterOnly, 10000); // Sync stays hidden
     }
 
     function parseFirstInt(s) {
@@ -82,16 +85,21 @@
       return Math.min(52, Math.max(1, n));
     }
 
+    // Strict card parsing: AS / A♠ / ace spades / spades ace / ace of spades
     function normaliseCard(input) {
       if (!input) return null;
       const raw = input.toUpperCase().trim();
 
+      // AS / 10D / QC (optionally spaced)
       const compact = raw.replace(/\s+/g, "");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(compact)) return compact;
 
-      const sym = compact.replaceAll("♠","S").replaceAll("♥","H").replaceAll("♦","D").replaceAll("♣","C");
+      // A♠ / 10♦ etc
+      const sym = compact
+        .replaceAll("♠","S").replaceAll("♥","H").replaceAll("♦","D").replaceAll("♣","C");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(sym)) return sym;
 
+      // Word tokens
       const text = raw.replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
       const tokens = text.split(" ").filter(t => t && t !== "OF" && t !== "THE");
 
@@ -108,9 +116,11 @@
         if (!rank && (rankMap[t] || /^(10|[2-9])$/.test(t))) rank = rankMap[t] || t;
         if (!suit && suitMap[t]) suit = suitMap[t];
       }
-      return (rank && suit) ? rank + suit : null;
+      if (!rank || !suit) return null;
+      return rank + suit;
     }
 
+    // If bottom card is at position p in the memorised stack, then newPos(x) = ((x - p - 1) mod 52) + 1
     function positionAfterCut(originalPos, bottomPos) {
       const z = (originalPos - bottomPos - 1) % 52;
       return (z < 0 ? z + 52 : z) + 1;
@@ -118,45 +128,67 @@
 
     function revealMathCore() {
       const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
+
+      // First/second line checks
       if (lines.length < 2) { hideFooterOnly(); return; }
 
       const namedCard = normaliseCard(lines[0]);
-      const pos = clamp1to52(parseFirstInt(lines[1]));
-      const bottomCard = lines.length >= 3 ? normaliseCard(lines[2]) : null;
-
-      if (lines.length >= 3) {
-        noteContent.value = lines.slice(0, 2).join("\n") + "\n";
-      }
+      const posRaw = parseFirstInt(lines[1]);
+      const pos = clamp1to52(posRaw);
 
       if (!namedCard || isNaN(pos)) { hideFooterOnly(); return; }
 
+      const hasCutLine = lines.length >= 3;
+
+      // If a 3rd line exists, require it to be a valid card. If not, do nothing and DON'T delete it.
+      let bottomCard = null;
+      if (hasCutLine) {
+        bottomCard = normaliseCard(lines[2]);
+        if (!bottomCard) { hideFooterOnly(); return; }
+      }
+
+      // Determine current position of namedCard (with optional cut)
       let currentPos;
       if (bottomCard) {
         const bottomPos = stack.indexOf(bottomCard) + 1;
         const origPos = stack.indexOf(namedCard) + 1;
         if (bottomPos <= 0 || origPos <= 0) { hideFooterOnly(); return; }
         currentPos = positionAfterCut(origPos, bottomPos);
+
+        // Only now that we know line 3 was valid, delete it
+        noteContent.value = lines.slice(0, 2).join("\n") + "\n";
       } else {
         currentPos = stack.indexOf(namedCard) + 1;
         if (currentPos <= 0) { hideFooterOnly(); return; }
       }
 
       const diff = currentPos - pos;
+
+      // SUCCESS PATH: from here onwards, we consider it a valid run, so hide Sync
+      hideSync();
+
+      // Match case (low-signal)
       if (diff === 0) { showFooter("00", 0); return; }
 
       let shift = diff % 52;
-      if (shift < 0) shift += 52;
+      if (shift < 0) shift += 52; // 1..51
       showFooter(stack[shift - 1], shift);
     }
 
     function revealMath() {
-      hideSync();
+      // Sync should NOT vanish on invalid input, so we only hide it in the success path above.
       setTimeout(revealMathCore, 220);
     }
 
     syncBtn.addEventListener("click", revealMath);
-    resetBtn.addEventListener("click", () => { noteContent.value = ""; restoreAll(); });
 
+    // Arrow: clears and is the ONLY way to restore Sync
+    resetBtn.addEventListener("click", () => {
+      noteContent.value = "";
+      restoreAll();
+    });
+
+    // Service worker (optional)
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/Notes/sw.js").catch(() => {});
     }
