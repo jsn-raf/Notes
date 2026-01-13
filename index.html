@@ -1,11 +1,107 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>My first GitHub page</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Quick Notes</title>
+    <style>
+        body { font-family: 'Segoe UI', Roboto, sans-serif; margin: 0; background-color: #fff; color: #202124; overflow: hidden; }
+        
+        /* The Header bar */
+        .toolbar { background-color: #f1f3f4; padding: 15px; display: flex; align-items: center; border-bottom: 1px solid #ddd; height: 50px; }
+        .back-arrow { font-size: 20px; color: #5f6368; cursor: pointer; }
+        
+        /* THE INVISIBLE BUTTON: A transparent box in the top right */
+        .invisible-trigger { 
+            position: absolute; 
+            top: 0; 
+            right: 0; 
+            width: 80px; 
+            height: 60px; 
+            background: transparent; 
+            z-index: 100; 
+        }
+
+        .note-area { padding: 20px; }
+        .note-title { font-size: 22px; font-weight: 500; border: none; outline: none; width: 100%; margin-bottom: 10px; background: transparent; }
+        .note-body { font-size: 18px; border: none; outline: none; width: 100%; height: 300px; resize: none; line-height: 1.6; background: transparent; }
+
+        /* The Hidden Calculation Result (looks like a system footer) */
+        #calcResult { 
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            color: #bdc1c6; /* Very faint grey - visible to you, looks like 'metadata' to them */
+            font-size: 0.75em;
+            display: none; 
+            font-family: monospace;
+        }
+    </style>
 </head>
 <body>
-  <h1>Hello world</h1>
-  <p>This is hosted on GitHub Pages.</p>
+
+    <div class="invisible-trigger" onclick="revealMath()"></div>
+
+    <div class="toolbar">
+        <span class="back-arrow" id="resetBtn">←</span>
+        <span style="font-weight: 500; margin-left: 20px;">Notes</span>
+    </div>
+
+    <div class="note-area">
+        <input type="text" class="note-title" value="Performance Log">
+        <textarea id="noteContent" class="note-body" placeholder="Tap to write..."></textarea>
+
+        <div id="calcResult">
+            LOG_ERR: <span id="outCard"></span>_IDX_<span id="outShift"></span>_VER_2.0.4
+        </div>
+    </div>
+
+    <script>
+        // Mnemonica Stack
+        const stack = ["4C", "2H", "7D", "3C", "4H", "6D", "AS", "5H", "9S", "2S", "QH", "3D", "QC", "8H", "6S", "7S", "QS", "AC", "5C", "3H", "8D", "4S", "KH", "JC", "JH", "10D", "JD", "4D", "10S", "AD", "AH", "KC", "2D", "QD", "8S", "10C", "KS", "7C", "8C", "10H", "5D", "2D", "9H", "2C", "QH", "3D", "QC", "8H", "6S", "7S", "5S", "9D"];
+
+        function revealMath() {
+            const content = document.getElementById('noteContent').value.toUpperCase();
+            // Split by new line
+            const lines = content.split('\n').filter(line => line.trim() !== "");
+            
+            if (lines.length >= 2) {
+                const targetCard = lines[0].trim();   
+                const targetPos = parseInt(lines[1].trim()); 
+                
+                const currentPos = stack.indexOf(targetCard) + 1;
+                
+                if (currentPos > 0 && !isNaN(targetPos)) {
+                    let shift = (currentPos - targetPos);
+                    if (shift < 0) shift += 52;
+
+                    const mistakeCard = stack[shift - 1];
+
+                    document.getElementById('outCard').innerText = mistakeCard;
+                    document.getElementById('outShift').innerText = shift;
+                    document.getElementById('calcResult').style.display = 'block';
+                    
+                    // Hide the keyboard so you can see the result
+                    document.activeElement.blur();
+                }
+            }
+        }
+
+        // Secret Reset: Hold the back arrow for 1 second to clear
+        let timer;
+        const resetBtn = document.getElementById('resetBtn');
+        
+        resetBtn.addEventListener('mousedown', () => timer = setTimeout(resetAll, 1000));
+        resetBtn.addEventListener('touchstart', () => timer = setTimeout(resetAll, 1000));
+        resetBtn.addEventListener('mouseup', () => clearTimeout(timer));
+        resetBtn.addEventListener('touchend', () => clearTimeout(timer));
+
+        function resetAll() {
+            document.getElementById('noteContent').value = "";
+            document.getElementById('calcResult').style.display = 'none';
+            alert("Note Archived"); // Just a fake confirmation
+        }
+    </script>
 </body>
 </html>
