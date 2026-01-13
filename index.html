@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Quick Notes</title>
 
-  <!-- PWA wiring -->
+  <!-- PWA wiring (adjust if your path differs) -->
   <link rel="manifest" href="/Notes/manifest.webmanifest">
   <meta name="theme-color" content="#f1f3f4">
   <meta name="mobile-web-app-capable" content="yes">
@@ -37,7 +37,7 @@
   </div>
 
   <script>
-    // Mnemonica stack (52 unique cards)
+    // Mnemonica stack (1–52)
     const stack = [
       "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
       "QC","8H","6S","5S","9H","KC","2D","JH","3S","8S","6H","10C",
@@ -46,10 +46,17 @@
       "10D","6C","AH","9D"
     ];
 
+    let hideTimer = null;
+
+    function hideSync() { syncBtn.style.display = "none"; }
+    function showSync() { syncBtn.style.display = ""; }
+
     function hideFooter() {
+      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
       outCard.innerText = "";
       outShift.innerText = "";
       calcResult.style.display = "none";
+      showSync();
     }
 
     function showFooter(cardText, shiftText) {
@@ -57,6 +64,9 @@
       outShift.innerText = String(shiftText);
       calcResult.style.display = "block";
       document.activeElement.blur();
+
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => hideFooter(), 10000);
     }
 
     function parseFirstInt(s) {
@@ -71,21 +81,18 @@
       return n;
     }
 
-    // Strict card parsing (accepts "ace spades" AND "spades ace", rejects junk)
+    // Strict card parsing: AS / A♠ / ace spades / spades ace / ace of spades
     function normaliseCard(input) {
       if (!input) return null;
       const raw = input.toUpperCase().trim();
 
-      // AS / 10D / QC (with or without spaces)
       const compact = raw.replace(/\s+/g, "");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(compact)) return compact;
 
-      // A♠ / 10♦
       const sym = compact
         .replaceAll("♠","S").replaceAll("♥","H").replaceAll("♦","D").replaceAll("♣","C");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(sym)) return sym;
 
-      // Word tokens: "ACE OF SPADES", "SPADES ACE", etc
       const text = raw.replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
       const tokens = text.split(" ").filter(t => t && t !== "OF" && t !== "THE");
 
@@ -106,20 +113,46 @@
       return rank + suit;
     }
 
+    // Convert a stack position x (1..52) to new position after a cut defined by bottom card B.
+    // If bottom card is at position p in the memorised stack, then newPos(x) = ((x - p - 1) mod 52) + 1
+    function positionAfterCut(originalPos, bottomPos) {
+      const z = (originalPos - bottomPos - 1) % 52;
+      return (z < 0 ? z + 52 : z) + 1;
+    }
+
     function revealMathCore() {
-      const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
-      if (lines.length < 2) { hideFooter(); return; }
+      const rawLines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
+      if (rawLines.length < 2) { hideFooter(); return; }
 
-      const card = normaliseCard(lines[0]);
-      const pos = clamp1to52(parseFirstInt(lines[1]));
-      if (!card || isNaN(pos)) { hideFooter(); return; }
+      const namedCard = normaliseCard(rawLines[0]);
+      const pos = clamp1to52(parseFirstInt(rawLines[1]));
+      const bottomCard = rawLines.length >= 3 ? normaliseCard(rawLines[2]) : null;
 
-      const currentPos = stack.indexOf(card) + 1;
-      if (currentPos <= 0) { hideFooter(); return; }
+      // If a 3rd line exists, remove it immediately (leaves only their card + number)
+      if (rawLines.length >= 3) {
+        noteContent.value = rawLines.slice(0, 2).join("\n") + "\n";
+      }
+
+      if (!namedCard || isNaN(pos)) { hideFooter(); return; }
+
+      // Determine current position of namedCard (with optional cut)
+      let currentPos;
+      if (bottomCard) {
+        const bottomPos = stack.indexOf(bottomCard) + 1;
+        if (bottomPos <= 0) { hideFooter(); return; }
+
+        const origPos = stack.indexOf(namedCard) + 1;
+        if (origPos <= 0) { hideFooter(); return; }
+
+        currentPos = positionAfterCut(origPos, bottomPos);
+      } else {
+        currentPos = stack.indexOf(namedCard) + 1;
+        if (currentPos <= 0) { hideFooter(); return; }
+      }
 
       const diff = currentPos - pos;
 
-      // Match case (keeps footer format, but low-signal)
+      // Match case
       if (diff === 0) { showFooter("00", 0); return; }
 
       let shift = diff % 52;
@@ -127,13 +160,20 @@
       showFooter(stack[shift - 1], shift);
     }
 
-    // Slight delay makes the button feel like an app action
-    function revealMath() { setTimeout(revealMathCore, 220); }
+    function revealMath() {
+      hideSync();
+      setTimeout(revealMathCore, 220);
+    }
 
     syncBtn.addEventListener("click", revealMath);
-    resetBtn.addEventListener("click", () => { noteContent.value = ""; hideFooter(); });
 
-    // Register SW (no silent “grey” logic exists anywhere in this file)
+    // Arrow: hard reset, and brings Sync back (via hideFooter)
+    resetBtn.addEventListener("click", () => {
+      noteContent.value = "";
+      hideFooter();
+    });
+
+    // Service worker (optional, keep if you're doing PWA install)
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/Notes/sw.js").catch(() => {});
     }
