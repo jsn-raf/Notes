@@ -4,8 +4,12 @@
   "start_url": "/Notes/",
   "scope": "/Notes/",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui", "browser"],
   "background_color": "#ffffff",
   "theme_color": "#f1f3f4",
-  "id": "/Notes/"
-} 
+  "icons": [
+    {
+      "src": "/Notes/ICON.PNG",
+      "type": "image/png"
+    }
+  ]
+}
