@@ -1,190 +1,272 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Quick Notes</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Quick Notes</title>
 
-    <!-- PWA wiring -->
-    <link rel="manifest" href="/Notes/manifest.webmanifest">
-    <meta name="theme-color" content="#f1f3f4">
-    <meta name="mobile-web-app-capable" content="yes">
+  <!-- PWA wiring -->
+  <link rel="manifest" href="/Card/manifest.webmanifest">
+  <meta name="theme-color" content="#f1f3f4">
+  <meta name="mobile-web-app-capable" content="yes">
 
-    <style>
-        body {
-            font-family: 'Segoe UI', Roboto, sans-serif;
-            margin: 0;
-            background-color: #fff;
-            color: #202124;
-            overflow: hidden;
-        }
+  <style>
+    body {
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      background-color: #fff;
+      color: #202124;
+      overflow: hidden;
+    }
 
-        .toolbar {
-            background-color: #f1f3f4;
-            padding: 15px;
-            display: flex;
-            align-items: center;
-            border-bottom: 1px solid #ddd;
-            height: 50px;
-            position: relative;
-        }
+    .toolbar {
+      background-color: #f1f3f4;
+      padding: 15px;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid #ddd;
+      height: 50px;
+      position: relative;
+    }
 
-        .back-arrow {
-            font-size: 20px;
-            color: #5f6368;
-            cursor: pointer;
-        }
+    .back-arrow {
+      font-size: 20px;
+      color: #5f6368;
+      cursor: pointer;
+      user-select: none;
+    }
 
-        .calc-trigger {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            padding: 8px 12px;
-            font-size: 12px;
-            color: #5f6368;
-            background-color: #e8eaed;
-            border-radius: 6px;
-            cursor: pointer;
-            user-select: none;
-        }
+    .calc-trigger {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #5f6368;
+      background-color: #e8eaed;
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 120ms ease;
+    }
 
-        .calc-trigger:hover {
-            background-color: #dadce0;
-        }
+    .calc-trigger:hover { background-color: #dadce0; }
 
-        .note-area {
-            padding: 20px;
-        }
+    /* Disabled state is subtle, no explicit error */
+    .calc-trigger.disabled {
+      opacity: 0.45;
+      pointer-events: none;
+    }
 
-        .note-body {
-            font-size: 18px;
-            border: none;
-            outline: none;
-            width: 100%;
-            height: 300px;
-            resize: none;
-            line-height: 1.6;
-            background: transparent;
-        }
+    .note-area { padding: 20px; }
 
-        #calcResult {
-            position: fixed;
-            bottom: 20px;
-            left: 20px;
-            right: 20px;
-            color: #bdc1c6;
-            font-size: 0.75em;
-            display: none;
-            font-family: monospace;
-        }
-    </style>
+    .note-body {
+      font-size: 18px;
+      border: none;
+      outline: none;
+      width: 100%;
+      height: 300px;
+      resize: none;
+      line-height: 1.6;
+      background: transparent;
+    }
+
+    #calcResult {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      color: #bdc1c6;
+      font-size: 0.75em;
+      display: none;
+      font-family: monospace;
+    }
+  </style>
 </head>
 
 <body>
-
-<div class="toolbar">
+  <div class="toolbar">
     <span class="back-arrow" id="resetBtn">←</span>
     <span style="font-weight: 500; margin-left: 20px;">Notes</span>
-    <div class="calc-trigger" onclick="revealMath()">Sync</div>
-</div>
+    <div class="calc-trigger" id="syncBtn" role="button" aria-label="Sync">Sync</div>
+  </div>
 
-<div class="note-area">
-    <textarea id="noteContent"
-              class="note-body"
-              placeholder="Tap to write..."></textarea>
+  <div class="note-area">
+    <textarea id="noteContent" class="note-body" placeholder="Tap to write..."></textarea>
 
     <div id="calcResult">
-        LOG_ERR:
-        <span id="outCard"></span>
-        _IDX_
-        <span id="outShift"></span>
-        _VER_2.0.4
+      LOG_ERR: <span id="outCard"></span>_IDX_<span id="outShift"></span>_VER_2.0.4
     </div>
-</div>
+  </div>
 
-<script>
+  <script>
+    /* ---------------------------
+       STACK
+       --------------------------- */
+
+    // Must be 52 UNIQUE valid cards for reliability.
     const stack = [
-        "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
-        "QC","8H","6S","7S","QS","AC","5C","3H","8D","4S","KH","JC",
-        "JH","10D","JD","4D","10S","AD","AH","KC","2D","QD","8S","10C",
-        "KS","7C","8C","10H","5D","2D","9H","2C","QH","3D","QC","8H",
-        "6S","7S","5S","9D"
+      "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
+      "QC","8H","6S","7S","QS","AC","5C","3H","8D","4S","KH","JC",
+      "JH","10D","JD","4D","10S","AD","AH","KC","2D","QD","8S","10C",
+      "KS","7C","8C","10H","5D","2D","9H","2C","QH","3D","QC","8H",
+      "6S","7S","5S","9D"
     ];
 
+    let STACK_OK = false;
+
+    function validateStack(arr) {
+      if (!Array.isArray(arr) || arr.length !== 52) return false;
+      const rx = /^(10|[2-9AJQK])[CDHS]$/;
+      for (const c of arr) if (!rx.test(c)) return false;
+      return new Set(arr).size === 52;
+    }
+
+    /* ---------------------------
+       UI HELPERS
+       --------------------------- */
+
+    function hideFooter() {
+      outCard.innerText = "";
+      outShift.innerText = "";
+      calcResult.style.display = "none";
+    }
+
+    function showFooter(cardText, shiftText) {
+      outCard.innerText = cardText;
+      outShift.innerText = String(shiftText);
+      calcResult.style.display = "block";
+      document.activeElement.blur();
+    }
+
+    function parseFirstInt(s) {
+      if (!s) return NaN;
+      const m = String(s).match(/-?\d+/);
+      return m ? parseInt(m[0], 10) : NaN;
+    }
+
+    function clamp1to52(n) {
+      if (!Number.isFinite(n)) return NaN;
+      if (n < 1) return 1;
+      if (n > 52) return 52;
+      return n;
+    }
+
+    function setSyncEnabled(enabled) {
+      if (enabled) syncBtn.classList.remove("disabled");
+      else syncBtn.classList.add("disabled");
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      STACK_OK = validateStack(stack);
+      setSyncEnabled(STACK_OK);
+      if (!STACK_OK) hideFooter(); // stay quiet
+    });
+
+    /* ---------------------------
+       STRICT CARD NORMALISER
+       --------------------------- */
+
     function normaliseCard(input) {
-        if (!input) return null;
+      if (!input) return null;
 
-        const text = input
-            .toUpperCase()
-            .replace(/[^A-Z0-9♠♥♦♣]/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
+      const raw = input.toUpperCase().trim();
 
-        const ranks = [
-            ["ACE","A","A"],["KING","K","K"],["QUEEN","Q","Q"],["JACK","J","J"],
-            ["TEN","10","10"],["NINE","9","9"],["EIGHT","8","8"],["SEVEN","7","7"],
-            ["SIX","6","6"],["FIVE","5","5"],["FOUR","4","4"],["THREE","3","3"],["TWO","2","2"]
-        ];
+      // 1) Compact shorthand like "AS", "10D", "QC" (optionally spaced)
+      const compact = raw.replace(/\s+/g, "");
+      if (/^(10|[2-9AJQK])[CDHS]$/.test(compact)) return compact;
 
-        const suits = [
-            ["SPADES","♠","S"],["HEARTS","♥","H"],
-            ["DIAMONDS","♦","D"],["CLUBS","♣","C"]
-        ];
+      // 2) Symbol forms like "A♠" or "10♦"
+      const sym = compact
+        .replaceAll("♠", "S")
+        .replaceAll("♥", "H")
+        .replaceAll("♦", "D")
+        .replaceAll("♣", "C");
+      if (/^(10|[2-9AJQK])[CDHS]$/.test(sym)) return sym;
 
-        let rank = null;
-        let suit = null;
+      // 3) Word forms like "ACE OF SPADES", "ACE SPADES", "SPADES ACE"
+      const text = raw
+        .replace(/[^A-Z0-9 ]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 
-        for (const r of ranks) if (r.some(k => text.includes(k))) { rank = r[2]; break; }
-        for (const s of suits) if (s.some(k => text.includes(k))) { suit = s[2]; break; }
+      const tokens = text.split(" ").filter(t => t && t !== "OF" && t !== "THE");
 
-        if (!rank || !suit) return null;
-        return rank + suit;
+      const rankMap = {
+        "ACE": "A", "KING": "K", "QUEEN": "Q", "JACK": "J",
+        "TEN": "10", "NINE": "9", "EIGHT": "8", "SEVEN": "7",
+        "SIX": "6", "FIVE": "5", "FOUR": "4", "THREE": "3", "TWO": "2",
+        "A": "A", "K": "K", "Q": "Q", "J": "J"
+      };
+      const suitMap = {
+        "SPADES": "S", "HEARTS": "H", "DIAMONDS": "D", "CLUBS": "C",
+        "S": "S", "H": "H", "D": "D", "C": "C"
+      };
+
+      let rank = null;
+      let suit = null;
+
+      for (const t of tokens) {
+        if (!rank && (rankMap[t] || /^(10|[2-9])$/.test(t))) rank = rankMap[t] || t;
+        if (!suit && suitMap[t]) suit = suitMap[t];
+      }
+
+      if (!rank || !suit) return null;
+      return rank + suit;
+    }
+
+    /* ---------------------------
+       CORE LOGIC
+       --------------------------- */
+
+    function revealMathCore() {
+      if (!STACK_OK) { hideFooter(); return; }
+
+      const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) { hideFooter(); return; }
+
+      const card = normaliseCard(lines[0]);
+      const pos = clamp1to52(parseFirstInt(lines[1]));
+
+      if (!card || isNaN(pos)) { hideFooter(); return; }
+
+      const currentPos = stack.indexOf(card) + 1;
+      if (currentPos <= 0) { hideFooter(); return; }
+
+      const diff = currentPos - pos;
+
+      // Match case: low-signal token
+      if (diff === 0) { showFooter("00", 0); return; }
+
+      let shift = diff % 52;
+      if (shift < 0) shift += 52; // 1..51 (since diff !== 0)
+      showFooter(stack[shift - 1], shift);
     }
 
     function revealMath() {
-        const lines = noteContent.value
-            .split('\n')
-            .filter(l => l.trim() !== '');
-
-        if (lines.length < 2) return;
-
-        const card = normaliseCard(lines[0]);
-        const targetPos = parseInt(lines[1], 10);
-        if (!card || isNaN(targetPos)) return;
-
-        const currentPos = stack.indexOf(card) + 1;
-        if (currentPos <= 0) return;
-
-        const diff = currentPos - targetPos;
-
-        if (diff === 0) {
-            outCard.innerText = "OK";
-            outShift.innerText = 0;
-        } else {
-            let shift = diff % 52;
-            if (shift < 0) shift += 52;
-            outCard.innerText = stack[shift - 1];
-            outShift.innerText = shift;
-        }
-
-        calcResult.style.display = "block";
-        document.activeElement.blur();
+      window.setTimeout(revealMathCore, 220);
     }
+
+    /* ---------------------------
+       BUTTONS
+       --------------------------- */
+
+    syncBtn.addEventListener("click", revealMath);
 
     // Single tap reset (no popup, no long-press)
-    resetBtn.addEventListener("click", resetAll);
+    resetBtn.addEventListener("click", () => {
+      noteContent.value = "";
+      hideFooter();
+    });
 
-    function resetAll() {
-        noteContent.value = "";
-        calcResult.style.display = "none";
-    }
+    /* ---------------------------
+       SERVICE WORKER
+       --------------------------- */
 
-    // Service worker registration
     if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("/Notes/sw.js").catch(() => {});
+      navigator.serviceWorker.register("/Card/sw.js").catch(() => {});
     }
-</script>
-
+  </script>
 </body>
 </html>
