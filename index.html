@@ -1,4 +1,3 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,81 +6,20 @@
   <title>Quick Notes</title>
 
   <!-- PWA wiring -->
-  <link rel="manifest" href="/Card/manifest.webmanifest">
+  <link rel="manifest" href="/Notes/manifest.webmanifest">
   <meta name="theme-color" content="#f1f3f4">
   <meta name="mobile-web-app-capable" content="yes">
 
   <style>
-    body {
-      font-family: 'Segoe UI', Roboto, sans-serif;
-      margin: 0;
-      background-color: #fff;
-      color: #202124;
-      overflow: hidden;
-    }
-
-    .toolbar {
-      background-color: #f1f3f4;
-      padding: 15px;
-      display: flex;
-      align-items: center;
-      border-bottom: 1px solid #ddd;
-      height: 50px;
-      position: relative;
-    }
-
-    .back-arrow {
-      font-size: 20px;
-      color: #5f6368;
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .calc-trigger {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      padding: 8px 12px;
-      font-size: 12px;
-      color: #5f6368;
-      background-color: #e8eaed;
-      border-radius: 6px;
-      cursor: pointer;
-      user-select: none;
-      transition: opacity 120ms ease;
-    }
-
+    body { font-family: 'Segoe UI', Roboto, sans-serif; margin: 0; background-color: #fff; color: #202124; overflow: hidden; }
+    .toolbar { background-color: #f1f3f4; padding: 15px; display: flex; align-items: center; border-bottom: 1px solid #ddd; height: 50px; position: relative; }
+    .back-arrow { font-size: 20px; color: #5f6368; cursor: pointer; user-select: none; }
+    .calc-trigger { position: absolute; top: 10px; right: 10px; padding: 8px 12px; font-size: 12px; color: #5f6368; background-color: #e8eaed; border-radius: 6px; cursor: pointer; user-select: none; transition: opacity 120ms ease; }
     .calc-trigger:hover { background-color: #dadce0; }
-
-    /* Disabled state is subtle, no explicit error */
-    .calc-trigger.disabled {
-      opacity: 0.45;
-      pointer-events: none;
-    }
-
+    .calc-trigger.disabled { opacity: 0.45; pointer-events: none; }
     .note-area { padding: 20px; }
-
-    .note-body {
-      font-size: 18px;
-      border: none;
-      outline: none;
-      width: 100%;
-      height: 300px;
-      resize: none;
-      line-height: 1.6;
-      background: transparent;
-    }
-
-    #calcResult {
-      position: fixed;
-      bottom: 20px;
-      left: 20px;
-      right: 20px;
-      color: #bdc1c6;
-      font-size: 0.75em;
-      display: none;
-      font-family: monospace;
-    }
+    .note-body { font-size: 18px; border: none; outline: none; width: 100%; height: 300px; resize: none; line-height: 1.6; background: transparent; }
+    #calcResult { position: fixed; bottom: 20px; left: 20px; right: 20px; color: #bdc1c6; font-size: 0.75em; display: none; font-family: monospace; }
   </style>
 </head>
 
@@ -101,10 +39,6 @@
   </div>
 
   <script>
-    /* ---------------------------
-       STACK
-       --------------------------- */
-
     // Must be 52 UNIQUE valid cards for reliability.
     const stack = [
       "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
@@ -122,10 +56,6 @@
       for (const c of arr) if (!rx.test(c)) return false;
       return new Set(arr).size === 52;
     }
-
-    /* ---------------------------
-       UI HELPERS
-       --------------------------- */
 
     function hideFooter() {
       outCard.innerText = "";
@@ -161,23 +91,16 @@
     document.addEventListener("DOMContentLoaded", () => {
       STACK_OK = validateStack(stack);
       setSyncEnabled(STACK_OK);
-      if (!STACK_OK) hideFooter(); // stay quiet
+      if (!STACK_OK) hideFooter();
     });
-
-    /* ---------------------------
-       STRICT CARD NORMALISER
-       --------------------------- */
 
     function normaliseCard(input) {
       if (!input) return null;
-
       const raw = input.toUpperCase().trim();
 
-      // 1) Compact shorthand like "AS", "10D", "QC" (optionally spaced)
       const compact = raw.replace(/\s+/g, "");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(compact)) return compact;
 
-      // 2) Symbol forms like "A♠" or "10♦"
       const sym = compact
         .replaceAll("♠", "S")
         .replaceAll("♥", "H")
@@ -185,12 +108,7 @@
         .replaceAll("♣", "C");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(sym)) return sym;
 
-      // 3) Word forms like "ACE OF SPADES", "ACE SPADES", "SPADES ACE"
-      const text = raw
-        .replace(/[^A-Z0-9 ]/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-
+      const text = raw.replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
       const tokens = text.split(" ").filter(t => t && t !== "OF" && t !== "THE");
 
       const rankMap = {
@@ -199,10 +117,8 @@
         "SIX": "6", "FIVE": "5", "FOUR": "4", "THREE": "3", "TWO": "2",
         "A": "A", "K": "K", "Q": "Q", "J": "J"
       };
-      const suitMap = {
-        "SPADES": "S", "HEARTS": "H", "DIAMONDS": "D", "CLUBS": "C",
-        "S": "S", "H": "H", "D": "D", "C": "C"
-      };
+      const suitMap = { "SPADES": "S", "HEARTS": "H", "DIAMONDS": "D", "CLUBS": "C",
+                        "S": "S", "H": "H", "D": "D", "C": "C" };
 
       let rank = null;
       let suit = null;
@@ -215,10 +131,6 @@
       if (!rank || !suit) return null;
       return rank + suit;
     }
-
-    /* ---------------------------
-       CORE LOGIC
-       --------------------------- */
 
     function revealMathCore() {
       if (!STACK_OK) { hideFooter(); return; }
@@ -236,11 +148,10 @@
 
       const diff = currentPos - pos;
 
-      // Match case: low-signal token
       if (diff === 0) { showFooter("00", 0); return; }
 
       let shift = diff % 52;
-      if (shift < 0) shift += 52; // 1..51 (since diff !== 0)
+      if (shift < 0) shift += 52;
       showFooter(stack[shift - 1], shift);
     }
 
@@ -248,24 +159,15 @@
       window.setTimeout(revealMathCore, 220);
     }
 
-    /* ---------------------------
-       BUTTONS
-       --------------------------- */
-
     syncBtn.addEventListener("click", revealMath);
 
-    // Single tap reset (no popup, no long-press)
     resetBtn.addEventListener("click", () => {
       noteContent.value = "";
       hideFooter();
     });
 
-    /* ---------------------------
-       SERVICE WORKER
-       --------------------------- */
-
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/Card/sw.js").catch(() => {});
+      navigator.serviceWorker.register("/Notes/sw.js").catch(() => {});
     }
   </script>
 </body>
