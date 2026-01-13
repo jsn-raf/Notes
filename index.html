@@ -11,37 +11,33 @@
   <meta name="mobile-web-app-capable" content="yes">
 
   <style>
-    body { font-family: 'Segoe UI', Roboto, sans-serif; margin: 0; background-color: #fff; color: #202124; overflow: hidden; }
-    .toolbar { background-color: #f1f3f4; padding: 15px; display: flex; align-items: center; border-bottom: 1px solid #ddd; height: 50px; position: relative; }
-    .back-arrow { font-size: 20px; color: #5f6368; cursor: pointer; user-select: none; }
-    .calc-trigger { position: absolute; top: 10px; right: 10px; padding: 8px 12px; font-size: 12px; color: #5f6368; background-color: #e8eaed; border-radius: 6px; cursor: pointer; user-select: none; }
-    .calc-trigger:hover { background-color: #dadce0; }
-    .note-area { padding: 20px; }
-    .note-body { font-size: 18px; border: none; outline: none; width: 100%; height: 300px; resize: none; line-height: 1.6; background: transparent; }
-    #calcResult { position: fixed; bottom: 20px; left: 20px; right: 20px; color: #bdc1c6; font-size: 0.75em; display: none; font-family: monospace; }
+    body { font-family: 'Segoe UI', Roboto, sans-serif; margin: 0; background:#fff; color:#202124; overflow:hidden; }
+    .toolbar { background:#f1f3f4; padding:15px; display:flex; align-items:center; border-bottom:1px solid #ddd; height:50px; position:relative; }
+    .back-arrow { font-size:20px; color:#5f6368; cursor:pointer; user-select:none; }
+    .calc-trigger { position:absolute; top:10px; right:10px; padding:8px 12px; font-size:12px; color:#5f6368; background:#e8eaed; border-radius:6px; cursor:pointer; user-select:none; }
+    .calc-trigger:hover { background:#dadce0; }
+    .note-area { padding:20px; }
+    .note-body { font-size:18px; border:none; outline:none; width:100%; height:300px; resize:none; line-height:1.6; background:transparent; }
+    #calcResult { position:fixed; bottom:20px; left:20px; right:20px; color:#bdc1c6; font-size:.75em; display:none; font-family:monospace; }
   </style>
 </head>
 
 <body>
   <div class="toolbar">
     <span class="back-arrow" id="resetBtn">←</span>
-    <span style="font-weight: 500; margin-left: 20px;">Notes</span>
+    <span style="font-weight:500; margin-left:20px;">Notes</span>
     <div class="calc-trigger" id="syncBtn" role="button" aria-label="Sync">Sync</div>
   </div>
 
   <div class="note-area">
     <textarea id="noteContent" class="note-body" placeholder="Tap to write..."></textarea>
-
     <div id="calcResult">
       LOG_ERR: <span id="outCard"></span>_IDX_<span id="outShift"></span>_VER_2.0.4
     </div>
   </div>
 
   <script>
-    /* ---------------------------
-       STACK (Mnemonica)
-       --------------------------- */
-
+    // Mnemonica stack (52 unique cards)
     const stack = [
       "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
       "QC","8H","6S","5S","9H","KC","2D","JH","3S","8S","6H","10C",
@@ -49,10 +45,6 @@
       "7S","10H","AD","4S","7H","4D","AC","9C","JS","QD","7C","QS",
       "10D","6C","AH","9D"
     ];
-
-    /* ---------------------------
-       UI HELPERS
-       --------------------------- */
 
     function hideFooter() {
       outCard.innerText = "";
@@ -68,8 +60,7 @@
     }
 
     function parseFirstInt(s) {
-      if (!s) return NaN;
-      const m = String(s).match(/-?\d+/);
+      const m = String(s ?? "").match(/-?\d+/);
       return m ? parseInt(m[0], 10) : NaN;
     }
 
@@ -80,66 +71,40 @@
       return n;
     }
 
-    /* ---------------------------
-       STRICT CARD NORMALISER
-       Accepts:
-       - AS / 10D / QC (optionally spaced)
-       - A♠ / 10♦ etc
-       - "ACE OF SPADES" / "ACE SPADES" / "SPADES ACE"
-       Rejects junk like "ASDASDA" or "FOX"
-       --------------------------- */
-
+    // Strict card parsing (accepts "ace spades" AND "spades ace", rejects junk)
     function normaliseCard(input) {
       if (!input) return null;
-
       const raw = input.toUpperCase().trim();
 
-      // 1) Compact shorthand
+      // AS / 10D / QC (with or without spaces)
       const compact = raw.replace(/\s+/g, "");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(compact)) return compact;
 
-      // 2) Symbol forms
+      // A♠ / 10♦
       const sym = compact
-        .replaceAll("♠", "S")
-        .replaceAll("♥", "H")
-        .replaceAll("♦", "D")
-        .replaceAll("♣", "C");
+        .replaceAll("♠","S").replaceAll("♥","H").replaceAll("♦","D").replaceAll("♣","C");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(sym)) return sym;
 
-      // 3) Word forms (token based)
-      const text = raw
-        .replace(/[^A-Z0-9 ]/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-
+      // Word tokens: "ACE OF SPADES", "SPADES ACE", etc
+      const text = raw.replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
       const tokens = text.split(" ").filter(t => t && t !== "OF" && t !== "THE");
 
       const rankMap = {
-        "ACE": "A", "KING": "K", "QUEEN": "Q", "JACK": "J",
-        "TEN": "10", "NINE": "9", "EIGHT": "8", "SEVEN": "7",
-        "SIX": "6", "FIVE": "5", "FOUR": "4", "THREE": "3", "TWO": "2",
-        "A": "A", "K": "K", "Q": "Q", "J": "J"
+        "ACE":"A","KING":"K","QUEEN":"Q","JACK":"J",
+        "TEN":"10","NINE":"9","EIGHT":"8","SEVEN":"7",
+        "SIX":"6","FIVE":"5","FOUR":"4","THREE":"3","TWO":"2",
+        "A":"A","K":"K","Q":"Q","J":"J"
       };
-      const suitMap = {
-        "SPADES": "S", "HEARTS": "H", "DIAMONDS": "D", "CLUBS": "C",
-        "S": "S", "H": "H", "D": "D", "C": "C"
-      };
+      const suitMap = { "SPADES":"S","HEARTS":"H","DIAMONDS":"D","CLUBS":"C","S":"S","H":"H","D":"D","C":"C" };
 
-      let rank = null;
-      let suit = null;
-
+      let rank = null, suit = null;
       for (const t of tokens) {
         if (!rank && (rankMap[t] || /^(10|[2-9])$/.test(t))) rank = rankMap[t] || t;
         if (!suit && suitMap[t]) suit = suitMap[t];
       }
-
       if (!rank || !suit) return null;
       return rank + suit;
     }
-
-    /* ---------------------------
-       CORE LOGIC
-       --------------------------- */
 
     function revealMathCore() {
       const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
@@ -147,7 +112,6 @@
 
       const card = normaliseCard(lines[0]);
       const pos = clamp1to52(parseFirstInt(lines[1]));
-
       if (!card || isNaN(pos)) { hideFooter(); return; }
 
       const currentPos = stack.indexOf(card) + 1;
@@ -155,34 +119,21 @@
 
       const diff = currentPos - pos;
 
-      // Match case: low-signal token
+      // Match case (keeps footer format, but low-signal)
       if (diff === 0) { showFooter("00", 0); return; }
 
       let shift = diff % 52;
-      if (shift < 0) shift += 52; // 1..51 (since diff !== 0)
+      if (shift < 0) shift += 52; // 1..51
       showFooter(stack[shift - 1], shift);
     }
 
-    function revealMath() {
-      window.setTimeout(revealMathCore, 220);
-    }
-
-    /* ---------------------------
-       BUTTONS
-       --------------------------- */
+    // Slight delay makes the button feel like an app action
+    function revealMath() { setTimeout(revealMathCore, 220); }
 
     syncBtn.addEventListener("click", revealMath);
+    resetBtn.addEventListener("click", () => { noteContent.value = ""; hideFooter(); });
 
-    // Single tap reset (no popup)
-    resetBtn.addEventListener("click", () => {
-      noteContent.value = "";
-      hideFooter();
-    });
-
-    /* ---------------------------
-       SERVICE WORKER
-       --------------------------- */
-
+    // Register SW (no silent “grey” logic exists anywhere in this file)
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/Notes/sw.js").catch(() => {});
     }
