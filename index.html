@@ -6,7 +6,7 @@
     <title>Quick Notes</title>
 
     <!-- PWA hooks -->
-    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="manifest" href="./manifest.webmanifest">
     <meta name="theme-color" content="#f1f3f4">
 
     <style>
@@ -103,7 +103,7 @@
     </div>
 
     <script>
-        // Mnemonica stack (must be 52 unique cards – validate before performance use)
+        // Mnemonica stack (note: should be 52 unique cards for reliability)
         const stack = [
             "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
             "QC","8H","6S","7S","QS","AC","5C","3H","8D","4S","KH","JC",
@@ -142,9 +142,7 @@
         }
 
         function revealMath() {
-            const lines = document.getElementById('noteContent')
-                .value.split('\n').filter(l => l.trim() !== '');
-
+            const lines = noteContent.value.split('\n').filter(l => l.trim() !== '');
             if (lines.length < 2) return;
 
             const card = normaliseCard(lines[0]);
@@ -161,7 +159,7 @@
                 outShift.innerText = 0;
             } else {
                 let shift = diff % 52;
-                if (shift < 0) shift += 52;
+                if (shift < 0) shift += 52;   // 1..51 (because diff !== 0)
                 outCard.innerText = stack[shift - 1];
                 outShift.innerText = shift;
             }
@@ -183,9 +181,9 @@
             alert("Note Archived");
         }
 
-        // Optional service worker registration
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js').catch(() => {});
+        // Register service worker (needed for installability on many Android Chrome builds)
+        if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.register("./sw.js").catch(() => {});
         }
     </script>
 
