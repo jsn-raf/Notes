@@ -80,9 +80,11 @@
       return m ? parseInt(m[0], 10) : NaN;
     }
 
-    function clamp1to52(n) {
+    // STRICT: only accept 1..52
+    function require1to52(n) {
       if (!Number.isFinite(n)) return NaN;
-      return Math.min(52, Math.max(1, n));
+      if (n < 1 || n > 52) return NaN;
+      return n;
     }
 
     // Strict card parsing: AS / A♠ / ace spades / spades ace / ace of spades
@@ -133,8 +135,7 @@
       if (lines.length < 2) { hideFooterOnly(); return; }
 
       const namedCard = normaliseCard(lines[0]);
-      const posRaw = parseFirstInt(lines[1]);
-      const pos = clamp1to52(posRaw);
+      const pos = require1to52(parseFirstInt(lines[1]));
 
       if (!namedCard || isNaN(pos)) { hideFooterOnly(); return; }
 
@@ -164,7 +165,7 @@
 
       const diff = currentPos - pos;
 
-      // SUCCESS PATH: from here onwards, we consider it a valid run, so hide Sync
+      // SUCCESS PATH: only now hide Sync
       hideSync();
 
       // Match case (low-signal)
@@ -176,7 +177,7 @@
     }
 
     function revealMath() {
-      // Sync should NOT vanish on invalid input, so we only hide it in the success path above.
+      // Sync should NOT vanish on invalid input; it's hidden only in the success path above.
       setTimeout(revealMathCore, 220);
     }
 
