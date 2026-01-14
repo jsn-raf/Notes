@@ -11,79 +11,91 @@
   <meta name="mobile-web-app-capable" content="yes">
 
   <style>
-    body { font-family: 'Segoe UI', Roboto, sans-serif; margin: 0; background:#fff; color:#202124; overflow:hidden; }
-
-    .toolbar {
-      background:#f5f6f7;
-      padding:15px;
-      display:flex;
-      align-items:center;
-      border-bottom:1px solid #e3e5e7;
-      height:50px;
-      position:relative;
+    body {
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      background: #fff;
+      color: #202124;
+      overflow: hidden;
     }
 
-    .back-arrow { font-size:20px; color:#5f6368; cursor:pointer; user-select:none; }
+    .toolbar {
+      background: #f5f6f7;
+      padding: 15px;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid #e3e5e7;
+      height: 50px;
+      position: relative;
+    }
+
+    .back-arrow {
+      font-size: 20px;
+      color: #5f6368;
+      cursor: pointer;
+      user-select: none;
+    }
 
     .title {
-      font-weight:500;
-      margin-left:20px;
-      user-select:none;
-      -webkit-user-select:none;
-      -webkit-touch-callout:none;
+      font-weight: 500;
+      margin-left: 20px;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
 
     .calc-trigger {
-      position:absolute;
-      right:10px;
-      top:50%;
-      transform:translateY(-50%);
-      padding:8px 12px;
-      font-size:12px;
-      color:#5f6368;
-      background:#e8eaed;
-      border-radius:6px;
-      cursor:pointer;
-      user-select:none;
-      -webkit-user-select:none;
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #5f6368;
+      background: #e8eaed;
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
     }
-    .calc-trigger:hover { background:#dadce0; }
 
-    .note-area { padding:20px; }
+    .calc-trigger:hover { background: #dadce0; }
+
+    .note-area { padding: 20px; }
 
     .note-body {
-      font-size:18px;
-      border:none;
-      outline:none;
-      width:100%;
+      font-size: 18px;
+      border: none;
+      outline: none;
+      width: 100%;
       min-height: calc(100vh - 120px);
-      resize:none;
-      line-height:1.6;
-      background:transparent;
-      color:#202124;
-      caret-color:#202124;
+      resize: none;
+      line-height: 1.6;
+      background: transparent;
+      color: #202124;
+      caret-color: #202124;
       -webkit-overflow-scrolling: touch;
     }
 
     #calcResult {
-      position:fixed;
-      bottom:20px;
-      left:20px;
-      right:20px;
-      color:#c7cbd1;
-      letter-spacing:0.02em;
-      font-size:.75em;
-      display:none;
-      font-family:monospace;
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      color: #c7cbd1;
+      letter-spacing: 0.02em;
+      font-size: 0.75em;
+      display: none;
+      font-family: monospace;
     }
   </style>
 </head>
 
 <body>
+
   <div class="toolbar">
     <span class="back-arrow" id="resetBtn">←</span>
     <span class="title" id="titleBtn">Quick Notes</span>
-    <div class="calc-trigger" id="syncBtn" role="button">Save</div>
+    <div class="calc-trigger" id="syncBtn">Save</div>
   </div>
 
   <div class="note-area">
@@ -103,8 +115,6 @@
     ];
 
     let hideTimer = null;
-
-    // Remember last valid output so you can re-show it on long-press title
     let lastOutCard = null;
     let lastOutShift = null;
 
@@ -133,7 +143,6 @@
       outCard.innerText = lastOutCard;
       outShift.innerText = lastOutShift;
       calcResult.style.display = "block";
-      document.activeElement.blur();
 
       if (hideTimer) clearTimeout(hideTimer);
       hideTimer = setTimeout(hideFooterOnly, 10000);
@@ -158,7 +167,8 @@
       if (/^(10|[2-9AJQK])[CDHS]$/.test(compact)) return compact;
 
       const sym = compact
-        .replaceAll("♠","S").replaceAll("♥","H").replaceAll("♦","D").replaceAll("♣","C");
+        .replaceAll("♠","S").replaceAll("♥","H")
+        .replaceAll("♦","D").replaceAll("♣","C");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(sym)) return sym;
 
       const text = raw.replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
@@ -170,15 +180,17 @@
         "SIX":"6","FIVE":"5","FOUR":"4","THREE":"3","TWO":"2",
         "A":"A","K":"K","Q":"Q","J":"J"
       };
-      const suitMap = { "SPADES":"S","HEARTS":"H","DIAMONDS":"D","CLUBS":"C","S":"S","H":"H","D":"D","C":"C" };
+      const suitMap = {
+        "SPADES":"S","HEARTS":"H","DIAMONDS":"D","CLUBS":"C",
+        "S":"S","H":"H","D":"D","C":"C"
+      };
 
       let rank = null, suit = null;
       for (const t of tokens) {
         if (!rank && (rankMap[t] || /^(10|[2-9])$/.test(t))) rank = rankMap[t] || t;
         if (!suit && suitMap[t]) suit = suitMap[t];
       }
-      if (!rank || !suit) return null;
-      return rank + suit;
+      return (rank && suit) ? rank + suit : null;
     }
 
     function positionAfterCut(originalPos, bottomPos) {
@@ -188,7 +200,6 @@
 
     function revealMathCore() {
       const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
-
       if (lines.length < 2) { hideFooterOnly(); return; }
 
       const namedCard = normaliseCard(lines[0]);
@@ -215,7 +226,6 @@
 
       const diff = currentPos - pos;
 
-      // SUCCESS PATH: only now hide Save
       hideSave();
 
       if (diff === 0) { showFooter("00", 0); return; }
@@ -236,20 +246,17 @@
       restoreAll();
     });
 
-    // Long-press title to re-show last result ONLY when Save is hidden (post-success)
+    // Long-press title = peek while held
     let holdTimer = null;
     const HOLD_MS = 650;
 
     function tryRevealLast() {
-      if (!isSaveHidden()) return;                // extra safeguard
+      if (!isSaveHidden()) return;
       if (lastOutCard == null || lastOutShift == null) return;
 
       outCard.innerText = lastOutCard;
       outShift.innerText = lastOutShift;
       calcResult.style.display = "block";
-
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(hideFooterOnly, 10000);
     }
 
     function holdStart(e) {
@@ -260,6 +267,7 @@
 
     function holdEnd() {
       if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+      hideFooterOnly();   // hide immediately on release
     }
 
     titleBtn.addEventListener("mousedown", holdStart);
