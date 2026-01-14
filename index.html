@@ -25,10 +25,19 @@
 
     .back-arrow { font-size:20px; color:#5f6368; cursor:pointer; user-select:none; }
 
+    .title {
+      font-weight:500;
+      margin-left:20px;
+      user-select:none;
+      -webkit-user-select:none;
+      -webkit-touch-callout:none;
+    }
+
     .calc-trigger {
       position:absolute;
-      top:10px;
       right:10px;
+      top:50%;
+      transform:translateY(-50%);
       padding:8px 12px;
       font-size:12px;
       color:#5f6368;
@@ -36,6 +45,7 @@
       border-radius:6px;
       cursor:pointer;
       user-select:none;
+      -webkit-user-select:none;
     }
     .calc-trigger:hover { background:#dadce0; }
 
@@ -72,8 +82,7 @@
 <body>
   <div class="toolbar">
     <span class="back-arrow" id="resetBtn">←</span>
-    <!-- CHANGED HERE -->
-    <span style="font-weight:500; margin-left:20px;">Quick Notes</span>
+    <span class="title" id="titleBtn">Quick Notes</span>
     <div class="calc-trigger" id="syncBtn" role="button">Save</div>
   </div>
 
@@ -85,7 +94,6 @@
   </div>
 
   <script>
-    // Mnemonica stack (1–52)
     const stack = [
       "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
       "QC","8H","6S","5S","9H","KC","2D","JH","3S","8S","6H","10C",
@@ -96,8 +104,13 @@
 
     let hideTimer = null;
 
+    // Remember last valid output so you can re-show it on long-press title
+    let lastOutCard = null;
+    let lastOutShift = null;
+
     function hideSave() { syncBtn.style.display = "none"; }
     function showSave() { syncBtn.style.display = ""; }
+    function isSaveHidden() { return syncBtn.style.display === "none"; }
 
     function hideFooterOnly() {
       if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
@@ -109,11 +122,16 @@
     function restoreAll() {
       hideFooterOnly();
       showSave();
+      lastOutCard = null;
+      lastOutShift = null;
     }
 
     function showFooter(cardText, shiftText) {
-      outCard.innerText = cardText;
-      outShift.innerText = String(shiftText);
+      lastOutCard = String(cardText);
+      lastOutShift = String(shiftText);
+
+      outCard.innerText = lastOutCard;
+      outShift.innerText = lastOutShift;
       calcResult.style.display = "block";
       document.activeElement.blur();
 
@@ -140,8 +158,7 @@
       if (/^(10|[2-9AJQK])[CDHS]$/.test(compact)) return compact;
 
       const sym = compact
-        .replaceAll("♠","S").replaceAll("♥","H")
-        .replaceAll("♦","D").replaceAll("♣","C");
+        .replaceAll("♠","S").replaceAll("♥","H").replaceAll("♦","D").replaceAll("♣","C");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(sym)) return sym;
 
       const text = raw.replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
@@ -171,6 +188,7 @@
 
     function revealMathCore() {
       const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
+
       if (lines.length < 2) { hideFooterOnly(); return; }
 
       const namedCard = normaliseCard(lines[0]);
@@ -196,6 +214,8 @@
       }
 
       const diff = currentPos - pos;
+
+      // SUCCESS PATH: only now hide Save
       hideSave();
 
       if (diff === 0) { showFooter("00", 0); return; }
@@ -215,6 +235,39 @@
       noteContent.value = "";
       restoreAll();
     });
+
+    // Long-press title to re-show last result ONLY when Save is hidden (post-success)
+    let holdTimer = null;
+    const HOLD_MS = 650;
+
+    function tryRevealLast() {
+      if (!isSaveHidden()) return;                // extra safeguard
+      if (lastOutCard == null || lastOutShift == null) return;
+
+      outCard.innerText = lastOutCard;
+      outShift.innerText = lastOutShift;
+      calcResult.style.display = "block";
+
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(hideFooterOnly, 10000);
+    }
+
+    function holdStart(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = setTimeout(tryRevealLast, HOLD_MS);
+    }
+
+    function holdEnd() {
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    }
+
+    titleBtn.addEventListener("mousedown", holdStart);
+    titleBtn.addEventListener("touchstart", holdStart, { passive: false });
+    titleBtn.addEventListener("mouseup", holdEnd);
+    titleBtn.addEventListener("mouseleave", holdEnd);
+    titleBtn.addEventListener("touchend", holdEnd);
+    titleBtn.addEventListener("touchcancel", holdEnd);
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/Notes/sw.js");
