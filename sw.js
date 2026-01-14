@@ -1,4 +1,4 @@
-const CACHE = "notes-v5";
+const CACHE = "notes-v6";
 const SHELL = [
   "/Notes/",
   "/Notes/manifest.webmanifest",
