@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Quick Notes</title>
 
-  <!-- PWA wiring -->
   <link rel="manifest" href="/Notes/manifest.webmanifest">
   <meta name="theme-color" content="#f5f6f7">
   <meta name="mobile-web-app-capable" content="yes">
@@ -34,6 +33,7 @@
       color: #5f6368;
       cursor: pointer;
       user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .title {
@@ -42,9 +42,10 @@
       user-select: none;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
     }
 
-    /* Overflow menu look (⋮) with proper tap target */
+    /* ⋮ control */
     .calc-trigger {
       position: absolute;
       right: 6px;
@@ -60,14 +61,7 @@
       cursor: pointer;
       user-select: none;
       line-height: 1;
-    }
-
-    /* REMOVE tap highlight / ripple on controls */
-    .calc-trigger,
-    .back-arrow,
-    .title {
       -webkit-tap-highlight-color: transparent;
-      outline: none;
     }
 
     .note-area { padding: 20px; }
@@ -86,16 +80,20 @@
       -webkit-overflow-scrolling: touch;
     }
 
+    /* NEW: discreet, high-contrast log near the dots */
     #calcResult {
-      position: fixed;
-      bottom: 20px;
-      left: 20px;
-      right: 20px;
-      color: #c7cbd1;
-      letter-spacing: 0.02em;
-      font-size: 0.75em;
-      display: none;
+      position: absolute;
+      top: 6px;
+      right: 56px;            /* just left of ⋮ */
       font-family: monospace;
+      font-size: 14px;        /* larger than before */
+      font-weight: 600;
+      color: #202124;
+      background: #ffffff;
+      padding: 4px 6px;
+      border-radius: 4px;
+      display: none;
+      pointer-events: none;  /* can’t be interacted with */
     }
   </style>
 </head>
@@ -106,13 +104,15 @@
     <span class="back-arrow" id="resetBtn">←</span>
     <span class="title" id="titleBtn">Quick Notes</span>
     <div class="calc-trigger" id="syncBtn" aria-label="More options">⋮</div>
+
+    <!-- moved log -->
+    <div id="calcResult">
+      <span id="outCard"></span> <span id="outShift"></span>
+    </div>
   </div>
 
   <div class="note-area">
     <textarea id="noteContent" class="note-body" placeholder="Tap to write..."></textarea>
-    <div id="calcResult">
-      LOG_ERR: <span id="outCard"></span>_IDX_<span id="outShift"></span>_VER_2.0.4
-    </div>
   </div>
 
   <script>
@@ -124,7 +124,6 @@
       "10D","6C","AH","9D"
     ];
 
-    let hideTimer = null;
     let lastOutCard = null;
     let lastOutShift = null;
 
@@ -132,28 +131,22 @@
     function showControl(){ syncBtn.style.display = ""; }
     function isControlHidden(){ return syncBtn.style.display === "none"; }
 
-    function hideFooterOnly(){
-      if (hideTimer){ clearTimeout(hideTimer); hideTimer = null; }
-      outCard.innerText = "";
-      outShift.innerText = "";
+    function hideLog(){
       calcResult.style.display = "none";
     }
 
-    function restoreAll(){
-      hideFooterOnly();
-      showControl();
-      lastOutCard = null;
-      lastOutShift = null;
-    }
-
-    function showFooter(cardText, shiftText){
-      lastOutCard = String(cardText);
-      lastOutShift = String(shiftText);
+    function showLog(){
+      if (!lastOutCard || lastOutShift == null) return;
       outCard.innerText = lastOutCard;
       outShift.innerText = lastOutShift;
       calcResult.style.display = "block";
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(hideFooterOnly, 10000);
+    }
+
+    function restoreAll(){
+      hideLog();
+      showControl();
+      lastOutCard = null;
+      lastOutShift = null;
     }
 
     function parseFirstInt(s){
@@ -174,10 +167,12 @@
       if (/^(10|[2-9AJQK])[CDHS]$/.test(compact)) return compact;
       const sym = compact.replaceAll("♠","S").replaceAll("♥","H").replaceAll("♦","D").replaceAll("♣","C");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(sym)) return sym;
+
       const text = raw.replace(/[^A-Z0-9 ]/g," ").replace(/\s+/g," ").trim();
       const tokens = text.split(" ").filter(t=>t && t!=="OF" && t!=="THE");
       const rankMap = {"ACE":"A","KING":"K","QUEEN":"Q","JACK":"J","TEN":"10","NINE":"9","EIGHT":"8","SEVEN":"7","SIX":"6","FIVE":"5","FOUR":"4","THREE":"3","TWO":"2","A":"A","K":"K","Q":"Q","J":"J"};
       const suitMap = {"SPADES":"S","HEARTS":"H","DIAMONDS":"D","CLUBS":"C","S":"S","H":"H","D":"D","C":"C"};
+
       let r=null,s=null;
       for (const t of tokens){
         if (!r && (rankMap[t] || /^(10|[2-9])$/.test(t))) r = rankMap[t] || t;
@@ -193,52 +188,70 @@
 
     function revealMathCore(){
       const lines = noteContent.value.split("\n").map(l=>l.trim()).filter(Boolean);
-      if (lines.length < 2){ hideFooterOnly(); return; }
+      if (lines.length < 2) return;
 
       const namedCard = normaliseCard(lines[0]);
       const pos = require1to52(parseFirstInt(lines[1]));
-      if (!namedCard || isNaN(pos)){ hideFooterOnly(); return; }
+      if (!namedCard || isNaN(pos)) return;
 
       let bottomCard = null;
       if (lines.length >= 3){
         bottomCard = normaliseCard(lines[2]);
-        if (!bottomCard){ hideFooterOnly(); return; }
+        if (!bottomCard) return;
       }
 
       let currentPos;
       if (bottomCard){
         const bp = stack.indexOf(bottomCard)+1;
         const op = stack.indexOf(namedCard)+1;
-        if (bp<=0 || op<=0){ hideFooterOnly(); return; }
+        if (bp<=0 || op<=0) return;
         currentPos = positionAfterCut(op,bp);
         noteContent.value = lines.slice(0,2).join("\n") + "\n";
       } else {
         currentPos = stack.indexOf(namedCard)+1;
-        if (currentPos<=0){ hideFooterOnly(); return; }
+        if (currentPos<=0) return;
       }
 
       const diff = currentPos - pos;
-      hideControl();
-      if (diff===0){ showFooter("00",0); return; }
+      hideControl();          // hide ⋮ on success
+
+      if (diff === 0){
+        lastOutCard = "OK";
+        lastOutShift = "0";
+        return;
+      }
+
       let shift = diff % 52; if (shift<0) shift+=52;
-      showFooter(stack[shift-1], shift);
+      lastOutCard = stack[shift-1];
+      lastOutShift = String(shift);
     }
 
-    function revealMath(){ setTimeout(revealMathCore, 220); }
+    function revealMath(){
+      setTimeout(revealMathCore, 200);
+    }
 
     syncBtn.addEventListener("click", revealMath);
-    resetBtn.addEventListener("click", ()=>{ noteContent.value=""; restoreAll(); });
+    resetBtn.addEventListener("click", () => {
+      noteContent.value = "";
+      restoreAll();
+    });
 
-    // Long-press title: peek while held
-    let holdTimer=null; const HOLD_MS=650;
-    function tryRevealLast(){
-      if (!isControlHidden()) return;
-      if (lastOutCard==null || lastOutShift==null) return;
-      outCard.innerText=lastOutCard; outShift.innerText=lastOutShift;
-      calcResult.style.display="block";
+    /* Long-press title = peek while held */
+    let holdTimer=null;
+    const HOLD_MS=650;
+
+    function holdStart(e){
+      if (e && e.preventDefault) e.preventDefault();
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => {
+        if (isControlHidden()) showLog();
+      }, HOLD_MS);
     }
-    function holdStart(e){ if (e&&e.preventDefault) e.preventDefault(); if (holdTimer) clearTimeout(holdTimer); holdTimer=setTimeout(tryRevealLast,HOLD_MS); }
-    function holdEnd(){ if (holdTimer){ clearTimeout(holdTimer); holdTimer=null; } hideFooterOnly(); }
+
+    function holdEnd(){
+      if (holdTimer){ clearTimeout(holdTimer); holdTimer=null; }
+      hideLog();
+    }
 
     titleBtn.addEventListener("mousedown", holdStart);
     titleBtn.addEventListener("touchstart", holdStart, {passive:false});
