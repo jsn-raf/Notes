@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Quick Notes</title>
 
+  <!-- PWA wiring -->
   <link rel="manifest" href="/Notes/manifest.webmanifest">
   <meta name="theme-color" content="#f5f6f7">
   <meta name="mobile-web-app-capable" content="yes">
@@ -43,16 +44,22 @@
       -webkit-touch-callout: none;
     }
 
-    /* Overflow menu look (⋮) */
+    /* Overflow menu look (⋮) with a decent tap target */
     .calc-trigger {
       position: absolute;
-      right: 12px;
+      right: 6px;
       top: 50%;
       transform: translateY(-50%);
-      font-size: 20px; /* slightly larger for ⋮ */
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
       color: #5f6368;
       cursor: pointer;
       user-select: none;
+      -webkit-user-select: none;
       line-height: 1;
     }
 
@@ -87,7 +94,6 @@
 </head>
 
 <body>
-
   <div class="toolbar">
     <span class="back-arrow" id="resetBtn">←</span>
     <span class="title" id="titleBtn">Quick Notes</span>
@@ -102,9 +108,190 @@
   </div>
 
   <script>
-    // All logic unchanged from previous version
-    // (stack, validation, cut handling, timers, long-press recall, etc.)
-  </script>
+    const stack = [
+      "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
+      "QC","8H","6S","5S","9H","KC","2D","JH","3S","8S","6H","10C",
+      "5D","KD","2C","3H","8D","5C","KS","JD","8C","10S","KH","JC",
+      "7S","10H","AD","4S","7H","4D","AC","9C","JS","QD","7C","QS",
+      "10D","6C","AH","9D"
+    ];
 
+    let hideTimer = null;
+    let lastOutCard = null;
+    let lastOutShift = null;
+
+    function hideControl() { syncBtn.style.display = "none"; }
+    function showControl() { syncBtn.style.display = ""; }
+    function isControlHidden() { return syncBtn.style.display === "none"; }
+
+    function hideFooterOnly() {
+      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+      outCard.innerText = "";
+      outShift.innerText = "";
+      calcResult.style.display = "none";
+    }
+
+    function restoreAll() {
+      hideFooterOnly();
+      showControl();
+      lastOutCard = null;
+      lastOutShift = null;
+    }
+
+    function showFooter(cardText, shiftText) {
+      lastOutCard = String(cardText);
+      lastOutShift = String(shiftText);
+
+      outCard.innerText = lastOutCard;
+      outShift.innerText = lastOutShift;
+      calcResult.style.display = "block";
+
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(hideFooterOnly, 10000);
+    }
+
+    function parseFirstInt(s) {
+      const m = String(s ?? "").match(/-?\d+/);
+      return m ? parseInt(m[0], 10) : NaN;
+    }
+
+    // STRICT: only accept 1..52
+    function require1to52(n) {
+      if (!Number.isFinite(n)) return NaN;
+      if (n < 1 || n > 52) return NaN;
+      return n;
+    }
+
+    // Strict card parsing: AS / A♠ / ace spades / spades ace / ace of spades
+    function normaliseCard(input) {
+      if (!input) return null;
+      const raw = input.toUpperCase().trim();
+
+      const compact = raw.replace(/\s+/g, "");
+      if (/^(10|[2-9AJQK])[CDHS]$/.test(compact)) return compact;
+
+      const sym = compact
+        .replaceAll("♠","S").replaceAll("♥","H")
+        .replaceAll("♦","D").replaceAll("♣","C");
+      if (/^(10|[2-9AJQK])[CDHS]$/.test(sym)) return sym;
+
+      const text = raw.replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+      const tokens = text.split(" ").filter(t => t && t !== "OF" && t !== "THE");
+
+      const rankMap = {
+        "ACE":"A","KING":"K","QUEEN":"Q","JACK":"J",
+        "TEN":"10","NINE":"9","EIGHT":"8","SEVEN":"7",
+        "SIX":"6","FIVE":"5","FOUR":"4","THREE":"3","TWO":"2",
+        "A":"A","K":"K","Q":"Q","J":"J"
+      };
+      const suitMap = { "SPADES":"S","HEARTS":"H","DIAMONDS":"D","CLUBS":"C","S":"S","H":"H","D":"D","C":"C" };
+
+      let rank = null, suit = null;
+      for (const t of tokens) {
+        if (!rank && (rankMap[t] || /^(10|[2-9])$/.test(t))) rank = rankMap[t] || t;
+        if (!suit && suitMap[t]) suit = suitMap[t];
+      }
+      return (rank && suit) ? rank + suit : null;
+    }
+
+    // If bottom card is at position p in the memorised stack, newPos(x)=((x-p-1) mod 52)+1
+    function positionAfterCut(originalPos, bottomPos) {
+      const z = (originalPos - bottomPos - 1) % 52;
+      return (z < 0 ? z + 52 : z) + 1;
+    }
+
+    function revealMathCore() {
+      const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
+
+      // Need lines 1 and 2
+      if (lines.length < 2) { hideFooterOnly(); return; }
+
+      const namedCard = normaliseCard(lines[0]);
+      const pos = require1to52(parseFirstInt(lines[1]));
+      if (!namedCard || isNaN(pos)) { hideFooterOnly(); return; }
+
+      // Optional cut line (line 3) must be valid if present
+      let bottomCard = null;
+      if (lines.length >= 3) {
+        bottomCard = normaliseCard(lines[2]);
+        if (!bottomCard) { hideFooterOnly(); return; }
+      }
+
+      // Determine current position (with optional cut)
+      let currentPos;
+      if (bottomCard) {
+        const bottomPos = stack.indexOf(bottomCard) + 1;
+        const origPos = stack.indexOf(namedCard) + 1;
+        if (bottomPos <= 0 || origPos <= 0) { hideFooterOnly(); return; }
+        currentPos = positionAfterCut(origPos, bottomPos);
+
+        // Only delete line 3 if it was valid and used
+        noteContent.value = lines.slice(0, 2).join("\n") + "\n";
+      } else {
+        currentPos = stack.indexOf(namedCard) + 1;
+        if (currentPos <= 0) { hideFooterOnly(); return; }
+      }
+
+      const diff = currentPos - pos;
+
+      // SUCCESS PATH: only now hide the control
+      hideControl();
+
+      // Match case (low-signal)
+      if (diff === 0) { showFooter("00", 0); return; }
+
+      let shift = diff % 52;
+      if (shift < 0) shift += 52;
+      showFooter(stack[shift - 1], shift);
+    }
+
+    function revealMath() {
+      setTimeout(revealMathCore, 220);
+    }
+
+    // Tap ⋮ to run
+    syncBtn.addEventListener("click", revealMath);
+
+    // Arrow: clear + restore
+    resetBtn.addEventListener("click", () => {
+      noteContent.value = "";
+      restoreAll();
+    });
+
+    // Long-press title = peek while held (only after a successful run)
+    let holdTimer = null;
+    const HOLD_MS = 650;
+
+    function tryRevealLast() {
+      if (!isControlHidden()) return;
+      if (lastOutCard == null || lastOutShift == null) return;
+      outCard.innerText = lastOutCard;
+      outShift.innerText = lastOutShift;
+      calcResult.style.display = "block";
+    }
+
+    function holdStart(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = setTimeout(tryRevealLast, HOLD_MS);
+    }
+
+    function holdEnd() {
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+      hideFooterOnly(); // hide immediately on release
+    }
+
+    titleBtn.addEventListener("mousedown", holdStart);
+    titleBtn.addEventListener("touchstart", holdStart, { passive: false });
+    titleBtn.addEventListener("mouseup", holdEnd);
+    titleBtn.addEventListener("mouseleave", holdEnd);
+    titleBtn.addEventListener("touchend", holdEnd);
+    titleBtn.addEventListener("touchcancel", holdEnd);
+
+    // Service worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/Notes/sw.js");
+    }
+  </script>
 </body>
 </html>
