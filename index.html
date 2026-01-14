@@ -7,18 +7,69 @@
 
   <!-- PWA wiring -->
   <link rel="manifest" href="/Notes/manifest.webmanifest">
-  <meta name="theme-color" content="#f1f3f4">
+  <meta name="theme-color" content="#f5f6f7">
   <meta name="mobile-web-app-capable" content="yes">
 
   <style>
     body { font-family: 'Segoe UI', Roboto, sans-serif; margin: 0; background:#fff; color:#202124; overflow:hidden; }
-    .toolbar { background:#f1f3f4; padding:15px; display:flex; align-items:center; border-bottom:1px solid #ddd; height:50px; position:relative; }
+
+    /* Softer, more “system” toolbar */
+    .toolbar {
+      background:#f5f6f7;
+      padding:15px;
+      display:flex;
+      align-items:center;
+      border-bottom:1px solid #e3e5e7;
+      height:50px;
+      position:relative;
+    }
+
     .back-arrow { font-size:20px; color:#5f6368; cursor:pointer; user-select:none; }
-    .calc-trigger { position:absolute; top:10px; right:10px; padding:8px 12px; font-size:12px; color:#5f6368; background:#e8eaed; border-radius:6px; cursor:pointer; user-select:none; }
+
+    /* “Save” reads more normal than “Sync” */
+    .calc-trigger {
+      position:absolute;
+      top:10px;
+      right:10px;
+      padding:8px 12px;
+      font-size:12px;
+      color:#5f6368;
+      background:#e8eaed;
+      border-radius:6px;
+      cursor:pointer;
+      user-select:none;
+    }
     .calc-trigger:hover { background:#dadce0; }
+
     .note-area { padding:20px; }
-    .note-body { font-size:18px; border:none; outline:none; width:100%; height:300px; resize:none; line-height:1.6; background:transparent; }
-    #calcResult { position:fixed; bottom:20px; left:20px; right:20px; color:#bdc1c6; font-size:.75em; display:none; font-family:monospace; }
+
+    /* Fill the viewport like a real notes app */
+    .note-body {
+      font-size:18px;
+      border:none;
+      outline:none;
+      width:100%;
+      min-height: calc(100vh - 120px); /* viewport fill */
+      resize:none;
+      line-height:1.6;
+      background:transparent;
+      color:#202124;
+      caret-color:#202124;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* “Metadata footer” feel */
+    #calcResult {
+      position:fixed;
+      bottom:20px;
+      left:20px;
+      right:20px;
+      color:#c7cbd1;
+      letter-spacing:0.02em;
+      font-size:.75em;
+      display:none;
+      font-family:monospace;
+    }
   </style>
 </head>
 
@@ -26,7 +77,7 @@
   <div class="toolbar">
     <span class="back-arrow" id="resetBtn">←</span>
     <span style="font-weight:500; margin-left:20px;">Notes</span>
-    <div class="calc-trigger" id="syncBtn" role="button">Sync</div>
+    <div class="calc-trigger" id="syncBtn" role="button">Save</div>
   </div>
 
   <div class="note-area">
@@ -37,6 +88,7 @@
   </div>
 
   <script>
+    // Mnemonica stack (1–52)
     const stack = [
       "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
       "QC","8H","6S","5S","9H","KC","2D","JH","3S","8S","6H","10C",
@@ -47,9 +99,10 @@
 
     let hideTimer = null;
 
-    function hideSync() { syncBtn.style.display = "none"; }
-    function showSync() { syncBtn.style.display = ""; }
+    function hideSave() { syncBtn.style.display = "none"; }
+    function showSave() { syncBtn.style.display = ""; }
 
+    // Footer-only hide: does NOT restore Save (auto-hide uses this)
     function hideFooterOnly() {
       if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
       outCard.innerText = "";
@@ -57,9 +110,10 @@
       calcResult.style.display = "none";
     }
 
+    // Full restore: ONLY called from the arrow
     function restoreAll() {
       hideFooterOnly();
-      showSync();
+      showSave();
     }
 
     function showFooter(cardText, shiftText) {
@@ -69,7 +123,7 @@
       document.activeElement.blur();
 
       if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(hideFooterOnly, 10000);
+      hideTimer = setTimeout(hideFooterOnly, 10000); // Save stays hidden
     }
 
     function parseFirstInt(s) {
@@ -77,12 +131,14 @@
       return m ? parseInt(m[0], 10) : NaN;
     }
 
+    // STRICT: only accept 1..52
     function require1to52(n) {
       if (!Number.isFinite(n)) return NaN;
       if (n < 1 || n > 52) return NaN;
       return n;
     }
 
+    // Strict card parsing: AS / A♠ / ace spades / spades ace / ace of spades
     function normaliseCard(input) {
       if (!input) return null;
       const raw = input.toUpperCase().trim();
@@ -110,9 +166,11 @@
         if (!rank && (rankMap[t] || /^(10|[2-9])$/.test(t))) rank = rankMap[t] || t;
         if (!suit && suitMap[t]) suit = suitMap[t];
       }
-      return (rank && suit) ? rank + suit : null;
+      if (!rank || !suit) return null;
+      return rank + suit;
     }
 
+    // If bottom card is at position p in the memorised stack, then newPos(x) = ((x - p - 1) mod 52) + 1
     function positionAfterCut(originalPos, bottomPos) {
       const z = (originalPos - bottomPos - 1) % 52;
       return (z < 0 ? z + 52 : z) + 1;
@@ -120,24 +178,30 @@
 
     function revealMathCore() {
       const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
+
+      // First/second line checks
       if (lines.length < 2) { hideFooterOnly(); return; }
 
       const namedCard = normaliseCard(lines[0]);
       const pos = require1to52(parseFirstInt(lines[1]));
       if (!namedCard || isNaN(pos)) { hideFooterOnly(); return; }
 
+      // If a 3rd line exists, require it to be valid. If not, do nothing and DON'T delete it.
       let bottomCard = null;
       if (lines.length >= 3) {
         bottomCard = normaliseCard(lines[2]);
         if (!bottomCard) { hideFooterOnly(); return; }
       }
 
+      // Determine current position of namedCard (with optional cut)
       let currentPos;
       if (bottomCard) {
         const bottomPos = stack.indexOf(bottomCard) + 1;
         const origPos = stack.indexOf(namedCard) + 1;
         if (bottomPos <= 0 || origPos <= 0) { hideFooterOnly(); return; }
         currentPos = positionAfterCut(origPos, bottomPos);
+
+        // Only now that we know line 3 was valid, delete it
         noteContent.value = lines.slice(0, 2).join("\n") + "\n";
       } else {
         currentPos = stack.indexOf(namedCard) + 1;
@@ -145,22 +209,32 @@
       }
 
       const diff = currentPos - pos;
-      hideSync();
 
+      // SUCCESS PATH: only now hide Save
+      hideSave();
+
+      // Match case (low-signal)
       if (diff === 0) { showFooter("00", 0); return; }
 
       let shift = diff % 52;
-      if (shift < 0) shift += 52;
+      if (shift < 0) shift += 52; // 1..51
       showFooter(stack[shift - 1], shift);
     }
 
     function revealMath() {
+      // Button should NOT vanish on invalid input; it’s hidden only in success path above.
       setTimeout(revealMathCore, 220);
     }
 
     syncBtn.addEventListener("click", revealMath);
-    resetBtn.addEventListener("click", () => { noteContent.value = ""; restoreAll(); });
 
+    // Arrow: clears and is the ONLY way to restore Save
+    resetBtn.addEventListener("click", () => {
+      noteContent.value = "";
+      restoreAll();
+    });
+
+    // Service worker
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/Notes/sw.js");
     }
