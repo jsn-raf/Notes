@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Quick Notes</title>
 
   <link rel="manifest" href="/Notes/manifest.webmanifest">
@@ -10,56 +10,122 @@
   <meta name="mobile-web-app-capable" content="yes">
 
   <style>
-    body { font-family: 'Segoe UI', Roboto, sans-serif; margin:0; background:#fff; color:#202124; }
+    body {
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      background: #fff;
+      color: #202124;
+      overflow: hidden;
+    }
+
     .toolbar {
-      background:#f5f6f7; padding:15px; display:flex; align-items:center;
-      border-bottom:1px solid #e3e5e7; height:50px; position:relative;
-    }
-    .back-arrow { font-size:20px; color:#5f6368; cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent; }
-    .title { font-weight:500; margin-left:20px; user-select:none; -webkit-tap-highlight-color:transparent; }
-    .action {
-      position:absolute; right:8px; top:50%; transform:translateY(-50%);
-      width:44px; height:44px; display:flex; align-items:center; justify-content:center;
-      font-size:20px; color:#5f6368; cursor:pointer; user-select:none;
-      -webkit-tap-highlight-color:transparent;
+      background: #f5f6f7;
+      padding: 15px;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid #e3e5e7;
+      height: 50px;
+      position: relative;
     }
 
-    .wrap { padding:16px; }
-    textarea {
-      width:100%; min-height:calc(100vh - 170px);
-      font-size:18px; line-height:1.6; border:none; outline:none; resize:none;
-      caret-color:#202124;
+    .back-arrow {
+      font-size: 20px;
+      color: #5f6368;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
 
-    .panel {
-      margin:12px 0 0 0;
-      padding:10px 12px;
-      border:1px solid #e3e5e7;
-      border-radius:8px;
-      background:#fff;
+    .title {
+      font-weight: 500;
+      margin-left: 20px;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Top-right control area (three vertical dots) */
+    .calc-trigger {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 44px;
+      height: 44px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Individual dots */
+    .vdot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: #5f6368;
+      opacity: 0.85;
+      transform: scale(1);
+    }
+
+    /* Persistent “success” cue: middle dot looks bolder */
+    .calc-trigger.armed .vdot.mid {
+      opacity: 1;
+      transform: scale(1.45);
+      background: #202124;
+    }
+
+    /* Peek text shown in the same top-right control area */
+    .peek {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size:14px;
-      display:none;
-      white-space:pre-wrap;
+      font-size: 14px;
+      font-weight: 700;
+      color: #202124;
+      letter-spacing: 0.02em;
+      line-height: 1;
     }
-    .muted { color:#5f6368; font-family:inherit; font-size:12px; }
+
+    .note-area { padding: 20px; }
+
+    .note-body {
+      font-size: 18px;
+      border: none;
+      outline: none;
+      width: 100%;
+      min-height: calc(100vh - 120px);
+      resize: none;
+      line-height: 1.6;
+      background: transparent;
+      color: #202124;
+      caret-color: #202124;
+      -webkit-overflow-scrolling: touch;
+    }
   </style>
 </head>
 
 <body>
   <div class="toolbar">
     <span class="back-arrow" id="resetBtn">←</span>
-    <span class="title">Quick Notes</span>
-    <div class="action" id="runBtn" aria-label="Run">⋮</div>
+    <span class="title" id="titleBtn">Quick Notes</span>
+
+    <div class="calc-trigger" id="syncBtn" aria-label="More options">
+      <span class="vdot"></span>
+      <span class="vdot mid"></span>
+      <span class="vdot"></span>
+    </div>
   </div>
 
-  <div class="wrap">
-    <div class="muted">Line 1: card (eg AS / ace of spades). Line 2: position 1–52. Optional line 3: bottom card.</div>
-    <div id="result" class="panel"></div>
-    <textarea id="noteContent" placeholder="Tap to write..."></textarea>
+  <div class="note-area">
+    <textarea id="noteContent" class="note-body" placeholder="Tap to write..."></textarea>
   </div>
 
   <script>
+    // Mnemonica stack (1–52)
     const stack = [
       "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
       "QC","8H","6S","5S","9H","KC","2D","JH","3S","8S","6H","10C",
@@ -68,10 +134,28 @@
       "10D","6C","AH","9D"
     ];
 
-    const noteContent = document.getElementById("noteContent");
-    const result = document.getElementById("result");
-    const runBtn = document.getElementById("runBtn");
-    const resetBtn = document.getElementById("resetBtn");
+    // Stored last result (set only on a valid run)
+    let lastOutCard = null;   // e.g. "2D" or "00"
+    let lastOutShift = null;  // e.g. "42" or "0"
+
+    const DOTS_HTML = `
+      <span class="vdot"></span>
+      <span class="vdot mid"></span>
+      <span class="vdot"></span>
+    `;
+
+    function setArmed() { syncBtn.classList.add("armed"); }
+    function clearArmed() { syncBtn.classList.remove("armed"); }
+
+    function showDots() {
+      syncBtn.innerHTML = DOTS_HTML;
+    }
+
+    function showPeekText() {
+      if (!lastOutCard || lastOutShift == null) return;
+      // Short and readable: card·shift (still compact)
+      syncBtn.innerHTML = `<span class="peek">${lastOutCard}·${lastOutShift}</span>`;
+    }
 
     function parseFirstInt(s) {
       const m = String(s ?? "").match(/-?\d+/);
@@ -84,9 +168,11 @@
       return n;
     }
 
+    // Accept: AS / A♠ / ace spades / spades ace / ace of spades etc.
     function normaliseCard(input) {
       if (!input) return null;
       const raw = input.toUpperCase().trim();
+
       const compact = raw.replace(/\s+/g, "");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(compact)) return compact;
 
@@ -104,75 +190,114 @@
         "SIX":"6","FIVE":"5","FOUR":"4","THREE":"3","TWO":"2",
         "A":"A","K":"K","Q":"Q","J":"J"
       };
-      const suitMap = { "SPADES":"S","HEARTS":"H","DIAMONDS":"D","CLUBS":"C","S":"S","H":"H","D":"D","C":"C" };
+      const suitMap = {
+        "SPADES":"S","HEARTS":"H","DIAMONDS":"D","CLUBS":"C",
+        "S":"S","H":"H","D":"D","C":"C"
+      };
 
       let rank = null, suit = null;
       for (const t of tokens) {
         if (!rank && (rankMap[t] || /^(10|[2-9])$/.test(t))) rank = rankMap[t] || t;
         if (!suit && suitMap[t]) suit = suitMap[t];
       }
-      return (rank && suit) ? rank + suit : null;
+      return (rank && suit) ? (rank + suit) : null;
     }
 
+    // If bottom card is at position p, newPos(x) = ((x - p - 1) mod 52) + 1
     function positionAfterCut(originalPos, bottomPos) {
       const z = (originalPos - bottomPos - 1) % 52;
       return (z < 0 ? z + 52 : z) + 1;
     }
 
-    function show(msg) {
-      result.textContent = msg;
-      result.style.display = "block";
-    }
-
-    function hide() {
-      result.textContent = "";
-      result.style.display = "none";
-    }
-
-    function run() {
+    function computeSilently() {
       const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
-      if (lines.length < 2) { show("Need at least 2 lines."); return; }
+
+      // Need at least card + number
+      if (lines.length < 2) return;
 
       const namedCard = normaliseCard(lines[0]);
       const targetPos = require1to52(parseFirstInt(lines[1]));
-      if (!namedCard) { show("Line 1 card not recognised."); return; }
-      if (isNaN(targetPos)) { show("Line 2 must be a number 1–52."); return; }
+      if (!namedCard || isNaN(targetPos)) return;
 
+      // Optional cut card (line 3) must be valid if present
       let bottomCard = null;
       if (lines.length >= 3) {
         bottomCard = normaliseCard(lines[2]);
-        if (!bottomCard) { show("Line 3 (bottom card) not recognised."); return; }
+        if (!bottomCard) return;
       }
 
+      // Determine current position of named card
       let currentPos;
       if (bottomCard) {
         const bottomPos = stack.indexOf(bottomCard) + 1;
         const origPos = stack.indexOf(namedCard) + 1;
-        if (bottomPos <= 0) { show("Bottom card not in stack."); return; }
-        if (origPos <= 0) { show("Named card not in stack."); return; }
+        if (bottomPos <= 0 || origPos <= 0) return;
+
         currentPos = positionAfterCut(origPos, bottomPos);
+
+        // Only delete line 3 if it was valid and used
+        noteContent.value = lines.slice(0, 2).join("\n") + "\n";
       } else {
         currentPos = stack.indexOf(namedCard) + 1;
-        if (currentPos <= 0) { show("Named card not in stack."); return; }
+        if (currentPos <= 0) return;
       }
 
       const diff = currentPos - targetPos;
 
       if (diff === 0) {
-        show(`MATCH\nCard: ${namedCard}\nPosition: ${targetPos}`);
-        return;
+        lastOutCard = "00";
+        lastOutShift = "0";
+      } else {
+        let shift = diff % 52;
+        if (shift < 0) shift += 52;
+        lastOutCard = stack[shift - 1];
+        lastOutShift = String(shift);
       }
 
-      let shift = diff % 52;
-      if (shift < 0) shift += 52;
-
-      const out = stack[shift - 1];
-      show(`RESULT\nOutput card: ${out}\nShift: ${shift}\nFrom: ${namedCard} @ ${currentPos}\nTo: ${targetPos}`);
+      // Mark success (persistent) – middle dot bold
+      setArmed();
     }
 
-    runBtn.addEventListener("click", run);
-    resetBtn.addEventListener("click", () => { noteContent.value = ""; hide(); });
+    // Tap the dots area to compute (no visible output)
+    syncBtn.addEventListener("click", () => setTimeout(computeSilently, 180));
 
+    // Arrow resets everything
+    resetBtn.addEventListener("click", () => {
+      noteContent.value = "";
+      lastOutCard = null;
+      lastOutShift = null;
+      clearArmed();
+      showDots();
+    });
+
+    // Long-press title = peek in the dots position (while held)
+    let holdTimer = null;
+    const HOLD_MS = 650;
+
+    function holdStart(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => {
+        // Only show peek if we have a stored result
+        if (lastOutCard && lastOutShift != null) showPeekText();
+      }, HOLD_MS);
+    }
+
+    function holdEnd() {
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+      // Revert to dots, and clear the “armed” indicator after you've peeked
+      showDots();
+      clearArmed();
+    }
+
+    titleBtn.addEventListener("mousedown", holdStart);
+    titleBtn.addEventListener("touchstart", holdStart, { passive: false });
+    titleBtn.addEventListener("mouseup", holdEnd);
+    titleBtn.addEventListener("mouseleave", holdEnd);
+    titleBtn.addEventListener("touchend", holdEnd);
+    titleBtn.addEventListener("touchcancel", holdEnd);
+
+    // Service worker
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/Notes/sw.js").catch(() => {});
     }
