@@ -45,7 +45,7 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    /* Top-right control area (three vertical dots) */
+    /* Top-right control: three vertical dots */
     .calc-trigger {
       position: absolute;
       right: 6px;
@@ -63,7 +63,6 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    /* Individual dots */
     .vdot {
       width: 4px;
       height: 4px;
@@ -73,21 +72,31 @@
       transform: scale(1);
     }
 
-    /* Persistent “success” cue: middle dot looks bolder */
-    .calc-trigger.armed .vdot.mid {
+    /* SUCCESS INDICATOR: TOP DOT BOLD */
+    .calc-trigger.armed .vdot.top {
       opacity: 1;
       transform: scale(1.45);
       background: #202124;
     }
 
-    /* Peek text shown in the same top-right control area */
-    .peek {
+    /* Peek text (replaces dots while held) */
+    .peekcol {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 14px;
-      font-weight: 700;
+      font-size: 13px;
+      font-weight: 750;
       color: #202124;
       letter-spacing: 0.02em;
       line-height: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+    }
+    .peekcol .sep {
+      opacity: 0.7;
+      font-weight: 900;
+      transform: translateY(-1px);
     }
 
     .note-area { padding: 20px; }
@@ -114,8 +123,8 @@
     <span class="title" id="titleBtn">Quick Notes</span>
 
     <div class="calc-trigger" id="syncBtn" aria-label="More options">
+      <span class="vdot top"></span>
       <span class="vdot"></span>
-      <span class="vdot mid"></span>
       <span class="vdot"></span>
     </div>
   </div>
@@ -125,7 +134,6 @@
   </div>
 
   <script>
-    // Mnemonica stack (1–52)
     const stack = [
       "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
       "QC","8H","6S","5S","9H","KC","2D","JH","3S","8S","6H","10C",
@@ -134,13 +142,12 @@
       "10D","6C","AH","9D"
     ];
 
-    // Stored last result (set only on a valid run)
-    let lastOutCard = null;   // e.g. "2D" or "00"
-    let lastOutShift = null;  // e.g. "42" or "0"
+    let lastOutCard = null;
+    let lastOutShift = null;
 
     const DOTS_HTML = `
+      <span class="vdot top"></span>
       <span class="vdot"></span>
-      <span class="vdot mid"></span>
       <span class="vdot"></span>
     `;
 
@@ -151,10 +158,16 @@
       syncBtn.innerHTML = DOTS_HTML;
     }
 
+    // UPDATED: stacked vertically: card, dot, shift
     function showPeekText() {
       if (!lastOutCard || lastOutShift == null) return;
-      // Short and readable: card·shift (still compact)
-      syncBtn.innerHTML = `<span class="peek">${lastOutCard}·${lastOutShift}</span>`;
+      syncBtn.innerHTML = `
+        <span class="peekcol">
+          <span>${lastOutCard}</span>
+          <span class="sep">·</span>
+          <span>${lastOutShift}</span>
+        </span>
+      `;
     }
 
     function parseFirstInt(s) {
@@ -168,7 +181,6 @@
       return n;
     }
 
-    // Accept: AS / A♠ / ace spades / spades ace / ace of spades etc.
     function normaliseCard(input) {
       if (!input) return null;
       const raw = input.toUpperCase().trim();
@@ -195,15 +207,14 @@
         "S":"S","H":"H","D":"D","C":"C"
       };
 
-      let rank = null, suit = null;
+      let r=null, s=null;
       for (const t of tokens) {
-        if (!rank && (rankMap[t] || /^(10|[2-9])$/.test(t))) rank = rankMap[t] || t;
-        if (!suit && suitMap[t]) suit = suitMap[t];
+        if (!r && (rankMap[t] || /^(10|[2-9])$/.test(t))) r = rankMap[t] || t;
+        if (!s && suitMap[t]) s = suitMap[t];
       }
-      return (rank && suit) ? (rank + suit) : null;
+      return (r && s) ? r + s : null;
     }
 
-    // If bottom card is at position p, newPos(x) = ((x - p - 1) mod 52) + 1
     function positionAfterCut(originalPos, bottomPos) {
       const z = (originalPos - bottomPos - 1) % 52;
       return (z < 0 ? z + 52 : z) + 1;
@@ -211,29 +222,24 @@
 
     function computeSilently() {
       const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
-
-      // Need at least card + number
       if (lines.length < 2) return;
 
       const namedCard = normaliseCard(lines[0]);
       const targetPos = require1to52(parseFirstInt(lines[1]));
       if (!namedCard || isNaN(targetPos)) return;
 
-      // Optional cut card (line 3) must be valid if present
       let bottomCard = null;
       if (lines.length >= 3) {
         bottomCard = normaliseCard(lines[2]);
         if (!bottomCard) return;
       }
 
-      // Determine current position of named card
       let currentPos;
       if (bottomCard) {
-        const bottomPos = stack.indexOf(bottomCard) + 1;
-        const origPos = stack.indexOf(namedCard) + 1;
-        if (bottomPos <= 0 || origPos <= 0) return;
-
-        currentPos = positionAfterCut(origPos, bottomPos);
+        const bp = stack.indexOf(bottomCard) + 1;
+        const op = stack.indexOf(namedCard) + 1;
+        if (bp <= 0 || op <= 0) return;
+        currentPos = positionAfterCut(op, bp);
 
         // Only delete line 3 if it was valid and used
         noteContent.value = lines.slice(0, 2).join("\n") + "\n";
@@ -254,14 +260,11 @@
         lastOutShift = String(shift);
       }
 
-      // Mark success (persistent) – middle dot bold
       setArmed();
     }
 
-    // Tap the dots area to compute (no visible output)
     syncBtn.addEventListener("click", () => setTimeout(computeSilently, 180));
 
-    // Arrow resets everything
     resetBtn.addEventListener("click", () => {
       noteContent.value = "";
       lastOutCard = null;
@@ -270,7 +273,6 @@
       showDots();
     });
 
-    // Long-press title = peek in the dots position (while held)
     let holdTimer = null;
     const HOLD_MS = 650;
 
@@ -278,26 +280,23 @@
       if (e && e.preventDefault) e.preventDefault();
       if (holdTimer) clearTimeout(holdTimer);
       holdTimer = setTimeout(() => {
-        // Only show peek if we have a stored result
         if (lastOutCard && lastOutShift != null) showPeekText();
       }, HOLD_MS);
     }
 
     function holdEnd() {
       if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
-      // Revert to dots, and clear the “armed” indicator after you've peeked
       showDots();
-      clearArmed();
+      clearArmed();   // clears the bold dot after peeking
     }
 
     titleBtn.addEventListener("mousedown", holdStart);
-    titleBtn.addEventListener("touchstart", holdStart, { passive: false });
+    titleBtn.addEventListener("touchstart", holdStart, { passive:false });
     titleBtn.addEventListener("mouseup", holdEnd);
     titleBtn.addEventListener("mouseleave", holdEnd);
     titleBtn.addEventListener("touchend", holdEnd);
     titleBtn.addEventListener("touchcancel", holdEnd);
 
-    // Service worker
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/Notes/sw.js").catch(() => {});
     }
