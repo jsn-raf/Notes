@@ -41,14 +41,14 @@
     .title {
       font-weight: 500;
       margin-left: 20px;
+      cursor: pointer;
       user-select: none;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
       -webkit-tap-highlight-color: transparent;
-      cursor: pointer; /* now tappable to compute */
     }
 
-    /* Dots control (indicator only) */
+    /* Dots indicator (non-interactive) */
     .calc-trigger {
       position: absolute;
       right: 6px;
@@ -59,16 +59,13 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-      pointer-events: none; /* indicator only */
+      pointer-events: none;
     }
 
     .dots {
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
       gap: 3px;
     }
 
@@ -80,17 +77,17 @@
       opacity: 0.65;
     }
 
-    /* Armed indicators */
     .calc-trigger.armed-top .vdot.top {
       background: #202124;
       opacity: 1;
     }
+
     .calc-trigger.armed-bottom .vdot.bottom {
       background: #202124;
       opacity: 1;
     }
 
-    /* Peek anchored near arrow (nudged right) */
+    /* Peek above / below arrow */
     .peek-arrow {
       position: absolute;
       left: 24px;
@@ -98,8 +95,6 @@
       transform: translateY(-50%);
       display: none;
       pointer-events: none;
-      user-select: none;
-      -webkit-user-select: none;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 12px;
       font-weight: 700;
@@ -113,6 +108,7 @@
       display: block;
       margin-bottom: 9px;
     }
+
     .peek-arrow .shift {
       display: block;
       margin-top: 9px;
@@ -129,9 +125,7 @@
       resize: none;
       line-height: 1.6;
       background: transparent;
-      color: #202124;
       caret-color: #202124;
-      -webkit-overflow-scrolling: touch;
     }
   </style>
 </head>
@@ -140,17 +134,14 @@
   <div class="toolbar">
     <span class="back-arrow" id="resetBtn">←</span>
 
-    <!-- Peek above / below arrow -->
     <div class="peek-arrow" id="peekArrow">
       <span class="card" id="peekCard"></span>
       <span class="shift" id="peekShift"></span>
     </div>
 
-    <!-- Header tap computes; long-press peeks -->
     <span class="title" id="titleBtn">Quick Notes</span>
 
-    <!-- Dots are indicators only -->
-    <div class="calc-trigger" id="syncBtn" aria-hidden="true">
+    <div class="calc-trigger" id="syncBtn">
       <div class="dots">
         <span class="vdot top"></span>
         <span class="vdot mid"></span>
@@ -176,40 +167,40 @@
     let lastOutShift = null;
 
     function clearArmed() {
-      syncBtn.classList.remove("armed-top");
-      syncBtn.classList.remove("armed-bottom");
-    }
-    function setArmed(which) {
-      clearArmed();
-      if (which === "bottom") syncBtn.classList.add("armed-bottom");
-      else syncBtn.classList.add("armed-top");
+      syncBtn.classList.remove("armed-top", "armed-bottom");
     }
 
-    function showPeekArrow() {
-      if (!lastOutCard || lastOutShift == null) return;
+    function setArmed(type) {
+      clearArmed();
+      syncBtn.classList.add(type === "bottom" ? "armed-bottom" : "armed-top");
+    }
+
+    function showPeek() {
+      if (!lastOutCard) return;
       peekCard.textContent = lastOutCard;
       peekShift.textContent = lastOutShift;
       peekArrow.style.display = "block";
     }
-    function hidePeekArrow() {
+
+    function hidePeek() {
       peekArrow.style.display = "none";
-      peekCard.textContent = "";
-      peekShift.textContent = "";
     }
 
     function parseFirstInt(s) {
-      const m = String(s ?? "").match(/-?\d+/);
+      const m = String(s).match(/-?\d+/);
       return m ? parseInt(m[0], 10) : NaN;
     }
-    function require1to52(n) {
+
+    function validPos(n) {
       return Number.isFinite(n) && n >= 1 && n <= 52 ? n : NaN;
     }
-    function normaliseCard(input) {
-      if (!input) return null;
-      const raw = input.toUpperCase().replace(/\s+/g, "");
-      if (/^(10|[2-9AJQK])[CDHS]$/.test(raw)) return raw;
-      return null;
+
+    function normaliseCard(c) {
+      if (!c) return null;
+      const x = c.toUpperCase().replace(/\s+/g, "");
+      return /^(10|[2-9AJQK])[CDHS]$/.test(x) ? x : null;
     }
+
     function positionAfterCut(op, bp) {
       const z = (op - bp - 1) % 52;
       return (z < 0 ? z + 52 : z) + 1;
@@ -220,16 +211,16 @@
       if (lines.length < 2) return;
 
       const card = normaliseCard(lines[0]);
-      const pos = require1to52(parseFirstInt(lines[1]));
+      const pos = validPos(parseFirstInt(lines[1]));
       if (!card || isNaN(pos)) return;
 
-      let usedThirdLine = false;
+      let usedThird = false;
       let cur;
 
       if (lines[2]) {
         const bottom = normaliseCard(lines[2]);
         if (!bottom) return;
-        usedThirdLine = true;
+        usedThird = true;
         cur = positionAfterCut(stack.indexOf(card)+1, stack.indexOf(bottom)+1);
         noteContent.value = lines.slice(0,2).join("\n") + "\n";
       } else {
@@ -241,38 +232,38 @@
         lastOutCard = "00";
         lastOutShift = "0";
       } else {
-        let s = diff % 52;
-        if (s < 0) s += 52;
+        let s = diff % 52; if (s < 0) s += 52;
         lastOutCard = stack[s-1];
         lastOutShift = String(s);
       }
 
-      setArmed(usedThirdLine ? "bottom" : "top");
+      setArmed(usedThird ? "bottom" : "top");
     }
 
-    /* Single tap header computes */
+    /* Tap title = compute */
     titleBtn.addEventListener("click", () => setTimeout(compute, 150));
 
-    /* Back arrow resets */
+    /* Back arrow always resets */
     resetBtn.addEventListener("click", () => {
       noteContent.value = "";
       lastOutCard = null;
       lastOutShift = null;
       clearArmed();
-      hidePeekArrow();
+      hidePeek();
     });
 
-    /* Long-press header peeks */
+    /* Long-press title = peek */
     let holdTimer = null;
     const HOLD_MS = 650;
 
     function holdStart(e) {
       if (e && e.preventDefault) e.preventDefault();
-      holdTimer = setTimeout(showPeekArrow, HOLD_MS);
+      holdTimer = setTimeout(showPeek, HOLD_MS);
     }
+
     function holdEnd() {
       clearTimeout(holdTimer);
-      hidePeekArrow();
+      hidePeek();
       clearArmed();
     }
 
@@ -282,10 +273,6 @@
     titleBtn.addEventListener("mouseleave", holdEnd);
     titleBtn.addEventListener("touchend", holdEnd);
     titleBtn.addEventListener("touchcancel", holdEnd);
-
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/Notes/sw.js").catch(() => {});
-    }
   </script>
 </body>
 </html>
