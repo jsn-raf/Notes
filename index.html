@@ -11,12 +11,13 @@
 
   <style>
     body{
-      font-family: 'Segoe UI', Roboto, sans-serif;
+      font-family:'Segoe UI', Roboto, sans-serif;
       margin:0;
       background:#fff;
       color:#202124;
       overflow:hidden;
     }
+
     .toolbar{
       background:#f5f6f7;
       padding:15px;
@@ -28,26 +29,26 @@
       -webkit-tap-highlight-color:transparent;
       touch-action:manipulation;
     }
+
     .back-arrow{
       font-size:20px;
       color:#5f6368;
       cursor:pointer;
-      position:relative;
-      z-index:3;
       padding:8px 10px;
       margin:-8px -10px;
       user-select:none;
       -webkit-user-select:none;
       -webkit-touch-callout:none;
+      z-index:2;
     }
+
     .title{
       font-weight:500;
       margin-left:20px;
-      pointer-events:none;
       user-select:none;
-      -webkit-user-select:none;
-      -webkit-touch-callout:none;
+      pointer-events:none;
     }
+
     .calc-trigger{
       position:absolute;
       right:6px;
@@ -58,20 +59,18 @@
       display:flex;
       align-items:center;
       justify-content:center;
-      pointer-events:none;
       user-select:none;
-      -webkit-user-select:none;
-      -webkit-touch-callout:none;
+      pointer-events:auto;
+      cursor:pointer;
     }
+
     .dots{
       display:flex;
       flex-direction:column;
       align-items:center;
       gap:3px;
-      user-select:none;
-      -webkit-user-select:none;
-      -webkit-touch-callout:none;
     }
+
     .vdot{
       width:4px;
       height:4px;
@@ -79,33 +78,13 @@
       background:#5f6368;
       opacity:0.65;
     }
+
     .calc-trigger.armed-top .vdot.top{ background:#202124; opacity:1; }
     .calc-trigger.armed-mid .vdot.mid{ background:#202124; opacity:1; }
     .calc-trigger.armed-bottom .vdot.bottom{ background:#202124; opacity:1; }
 
-    .peek-arrow{
-      position:absolute;
-      left:24px;
-      top:50%;
-      transform:translateY(-50%);
-      display:none;
-      pointer-events:none;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size:12px;
-      font-weight:700;
-      line-height:1;
-      letter-spacing:0.02em;
-      color:#202124;
-      text-align:center;
-      z-index:2;
-      user-select:none;
-      -webkit-user-select:none;
-      -webkit-touch-callout:none;
-    }
-    .peek-arrow .card{ display:block; margin-bottom:9px; }
-    .peek-arrow .shift{ display:block; margin-top:9px; }
-
     .note-area{ padding:20px; }
+
     .note-body{
       font-size:18px;
       border:none;
@@ -116,24 +95,56 @@
       line-height:1.6;
       background:transparent;
       color:#202124;
-      caret-color:#202124;
       -webkit-overflow-scrolling:touch;
+    }
+
+    /* About overlay */
+    .about-overlay{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,0.08);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:10;
+    }
+
+    .about-card{
+      background:#fff;
+      width:calc(100% - 48px);
+      max-width:420px;
+      padding:20px;
+      border-radius:12px;
+      box-shadow:0 8px 24px rgba(0,0,0,0.12);
+      font-size:14px;
+      line-height:1.5;
+      color:#202124;
+    }
+
+    .about-card h2{
+      margin:0 0 12px 0;
+      font-size:16px;
+      font-weight:500;
+    }
+
+    .about-card p{
+      margin:0 0 12px 0;
+    }
+
+    .about-footer{
+      margin-top:12px;
+      font-size:12px;
+      color:#5f6368;
     }
   </style>
 </head>
 
 <body>
-  <div class="toolbar" id="toolbarBtn">
+  <div class="toolbar">
     <span class="back-arrow" id="resetBtn">←</span>
-
-    <div class="peek-arrow" id="peekArrow">
-      <span class="card" id="peekCard"></span>
-      <span class="shift" id="peekShift"></span>
-    </div>
-
     <span class="title">Quick Notes</span>
 
-    <div class="calc-trigger" id="syncBtn" aria-hidden="true">
+    <div class="calc-trigger" id="aboutBtn" aria-label="About">
       <div class="dots">
         <span class="vdot top"></span>
         <span class="vdot mid"></span>
@@ -146,290 +157,57 @@
     <textarea id="noteContent" class="note-body" placeholder="Start typing…"></textarea>
   </div>
 
+  <!-- About overlay -->
+  <div class="about-overlay" id="aboutOverlay">
+    <div class="about-card">
+      <h2>Quick Notes</h2>
+
+      <p>
+        A lightweight note-taking utility for quick capture. Clean layout designed for speed and clarity.
+        All content is stored locally on your device. Accessible at any time without setup or accounts.
+        Nothing is shared or synced externally.
+      </p>
+
+      <p>
+        Notes are intentionally minimal by design. Optimised for fast access with low distraction.
+        Text formatting is kept simple and predictable. Everything works consistently across sessions.
+        Straightforward and unobtrusive.
+      </p>
+
+      <div class="about-footer">
+        Build 1.3-g4l4h4d · Jan 2026<br>
+        © Jason Parry
+      </div>
+    </div>
+  </div>
+
   <script>
-    "use strict";
-
-    const toolbarBtn  = document.getElementById("toolbarBtn");
-    const resetBtn    = document.getElementById("resetBtn");
-    const syncBtn     = document.getElementById("syncBtn");
+    const resetBtn = document.getElementById("resetBtn");
     const noteContent = document.getElementById("noteContent");
-    const peekArrow   = document.getElementById("peekArrow");
-    const peekCard    = document.getElementById("peekCard");
-    const peekShift   = document.getElementById("peekShift");
+    const aboutBtn = document.getElementById("aboutBtn");
+    const aboutOverlay = document.getElementById("aboutOverlay");
 
-    toolbarBtn.addEventListener("contextmenu", e => e.preventDefault());
-
-    const stack = [
-      "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
-      "QC","8H","6S","5S","9H","KC","2D","JH","3S","8S","6H","10C",
-      "5D","KD","2C","3H","8D","5C","KS","JD","8C","10S","KH","JC",
-      "7S","10H","AD","4S","7H","4D","AC","9C","JS","QD","7C","QS",
-      "10D","6C","AH","9D"
-    ];
-
-    let lastOutCard = null;
-    let lastOutShift = null;
-    let lastComputedSnapshot = null;
-    let isDirty = true;
-
-    noteContent.addEventListener("input", () => {
-      isDirty = true;
-      lastOutCard = null;
-      lastOutShift = null;
-      clearArmed();
-      hidePeek();
-    });
-
-    function clearArmed(){
-      syncBtn.classList.remove("armed-top","armed-mid","armed-bottom");
-    }
-    function setArmedMode(mode){
-      clearArmed();
-      if (mode === "mid") syncBtn.classList.add("armed-mid");
-      else if (mode === "bottom") syncBtn.classList.add("armed-bottom");
-      else syncBtn.classList.add("armed-top");
-    }
-
-    function showPeek(){
-      if (!lastOutCard) return;
-      peekCard.textContent = lastOutCard;
-      peekShift.textContent = lastOutShift;
-      peekArrow.style.display = "block";
-    }
-    function hidePeek(){
-      peekArrow.style.display = "none";
-      peekCard.textContent = "";
-      peekShift.textContent = "";
-    }
-
-    const suitMap = {
-      SPADES:"S",SPADE:"S",S:"S","♠":"S",
-      HEARTS:"H",HEART:"H",H:"H","♥":"H",
-      DIAMONDS:"D",DIAMOND:"D",D:"D","♦":"D",
-      CLUBS:"C",CLUB:"C",C:"C","♣":"C"
-    };
-    const rankMap = {
-      ACE:"A",A:"A",KING:"K",K:"K",QUEEN:"Q",Q:"Q",JACK:"J",J:"J",
-      TEN:"10","10":"10",NINE:"9","9":"9",EIGHT:"8","8":"8",
-      SEVEN:"7","7":"7",SIX:"6","6":"6",FIVE:"5","5":"5",
-      FOUR:"4","4":"4",THREE:"3","3":"3",TWO:"2","2":"2"
-    };
-
-    function findCardInText(text){
-      if (!text) return null;
-      const raw = String(text);
-      const compactRe = /(10|[2-9AJQK])\s*([CDHS♠♥♦♣])/ig;
-      let m;
-      while ((m = compactRe.exec(raw)) !== null) {
-        const r = String(m[1]).toUpperCase();
-        const s = ({"♠":"S","♥":"H","♦":"D","♣":"C"}[m[2]] || String(m[2]).toUpperCase());
-        const code = r + s;
-        if (/^(10|[2-9AJQK])[CDHS]$/.test(code)) return { code, start: m.index, end: m.index + m[0].length };
-      }
-      const tokenRe = /[A-Za-z0-9♠♥♦♣]+/g;
-      let t, suitTok=null, rankTok=null;
-      while ((t = tokenRe.exec(raw)) !== null) {
-        const u = t[0].toUpperCase(), s=t.index, e=s+t[0].length;
-        if (!suitTok && suitMap[u]) suitTok={u,s,e};
-        if (!rankTok && rankMap[u]) rankTok={u,s,e};
-        if (suitTok && rankTok) break;
-      }
-      if (!suitTok || !rankTok) return null;
-      return { code: rankMap[rankTok.u] + suitMap[suitTok.u], start: Math.min(suitTok.s, rankTok.s), end: Math.max(suitTok.e, rankTok.e) };
-    }
-
-    function normaliseCard(line){
-      const f = findCardInText(String(line ?? ""));
-      return f ? f.code : null;
-    }
-
-    function normaliseNumberTextKeepLength(s){
-      return String(s ?? "")
-        .replace(/\u00A0/g, " ")
-        .replace(/[\u2010-\u2014]/g, "-");
-    }
-
-    const ones = {
-      ONE:1,TWO:2,THREE:3,FOUR:4,FIVE:5,SIX:6,SEVEN:7,EIGHT:8,NINE:9,
-      TEN:10,ELEVEN:11,TWELVE:12,THIRTEEN:13,FOURTEEN:14,FIFTEEN:15,
-      SIXTEEN:16,SEVENTEEN:17,EIGHTEEN:18,NINETEEN:19
-    };
-    const tens = { TWENTY:20, THIRTY:30, FORTY:40, FIFTY:50 };
-
-    function findPositionInLine(line){
-      const s = normaliseNumberTextKeepLength(String(line ?? ""));
-      if (!s.trim()) return null;
-      const d = /\d+/.exec(s);
-      if (d) {
-        const v = parseInt(d[0], 10);
-        if (v >= 1 && v <= 52) return { value: v, start: d.index, end: d.index + d[0].length };
-      }
-      const re = /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)(?:[-\s]+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen))?\b/ig;
-      let best=null,m;
-      while ((m = re.exec(s)) !== null) {
-        const a = String(m[1]).toUpperCase(), b = m[2] ? String(m[2]).toUpperCase() : null;
-        let v = NaN;
-        if (ones[a] != null) v = ones[a];
-        else if (tens[a] != null && b && ones[b] != null) v = tens[a] + ones[b];
-        else if (tens[a] != null && !b) v = tens[a];
-        if (Number.isFinite(v) && v >= 1 && v <= 52) {
-          const cand = { value: v, start: m.index, end: m.index + m[0].length };
-          if (!best || (cand.end - cand.start) > (best.end - best.start)) best = cand;
-        }
-      }
-      return best;
-    }
-
-    function removeSpanPolished(orig, start, end){
-      let before = orig.slice(0, start).replace(/\b(of|the)\b[\s\-]*$/i, "");
-      let after  = orig.slice(end).replace(/^[\s\-]*\b(of|the)\b/i, "");
-      return (before + after).replace(/\s{2,}/g, " ").replace(/[ \t]+$/g, "");
-    }
-
-    function buildDeckNow(bottomCard){
-      if (!bottomCard) return stack.slice();
-      const bi = stack.indexOf(bottomCard);
-      if (bi < 0) return null;
-      return stack.slice(bi + 1).concat(stack.slice(0, bi + 1));
-    }
-
-    function compute(){
-      if (!isDirty && lastComputedSnapshot === noteContent.value) return;
-
-      const raw = noteContent.value.split("\n");
-      const line1 = raw[0] ?? "";
-      const line2 = raw[1] ?? "";
-      const line3 = raw[2] ?? "";
-
-      if (!line1.trim() || !line2.trim()) return;
-
-      const namedCard = normaliseCard(line1);
-      if (!namedCard) return;
-
-      const posInfo = findPositionInLine(line2);
-      if (!posInfo) return;
-
-      let bottomCard = null;
-      let mode = "top";
-      let inlineSpan = null;
-
-      if (line3.trim()) {
-        const b3 = normaliseCard(line3);
-        if (!b3) return;
-        bottomCard = b3;
-        mode = "bottom";
-      } else {
-        const remainder = line2.slice(posInfo.end);
-        const found = findCardInText(remainder);
-        if (found) {
-          bottomCard = found.code;
-          mode = "mid";
-          inlineSpan = { s: posInfo.end + found.start, e: posInfo.end + found.end };
-        }
-      }
-
-      const deckNow = buildDeckNow(bottomCard);
-      if (!deckNow) return;
-
-      const namedIdxNow = deckNow.indexOf(namedCard);
-      if (namedIdxNow < 0) return;
-
-      const currentPos = namedIdxNow + 1;
-      const diff = currentPos - posInfo.value;
-
-      if (diff === 0) {
-        lastOutCard = "00";
-        lastOutShift = "0";
-      } else {
-        let shift = diff % 52;
-        if (shift < 0) shift += 52;
-        lastOutCard = deckNow[shift - 1];
-        lastOutShift = String(shift);
-      }
-
-      if (mode === "bottom") {
-        noteContent.value = line1 + "\n" + line2;
-      } else if (mode === "mid" && inlineSpan) {
-        noteContent.value = line1 + "\n" + removeSpanPolished(line2, inlineSpan.s, inlineSpan.e);
-      }
-
-      setArmedMode(mode);
-      lastComputedSnapshot = noteContent.value;
-      isDirty = false;
-    }
-
-    const HOLD_MS = 650;
-    const MOVE_TOL = 10;
-
-    let holdTimer = null;
-    let peekShownThisGesture = false;
-    let startX = 0, startY = 0;
-    let startedOnReset = false;
-
-    function clearHold(){
-      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
-    }
-
-    function onDown(e){
-      startedOnReset = !!(e.target && e.target.closest && e.target.closest("#resetBtn"));
-      if (startedOnReset) return;
-      if (document.activeElement === noteContent) noteContent.blur();
-
-      peekShownThisGesture = false;
-      startX = e.clientX;
-      startY = e.clientY;
-
-      try { toolbarBtn.setPointerCapture(e.pointerId); } catch (_) {}
-
-      clearHold();
-      holdTimer = setTimeout(() => {
-        peekShownThisGesture = true;
-        showPeek();
-      }, HOLD_MS);
-    }
-
-    function onMove(e){
-      if (startedOnReset || !holdTimer) return;
-      if (Math.abs(e.clientX - startX) > MOVE_TOL || Math.abs(e.clientY - startY) > MOVE_TOL) {
-        clearHold();
-        hidePeek();
-      }
-    }
-
-    function onUpOrCancel(){
-      if (startedOnReset) { startedOnReset = false; return; }
-      clearHold();
-      if (peekShownThisGesture) {
-        hidePeek();
-        clearArmed();
-        return;
-      }
-      hidePeek();
-      setTimeout(compute, 50);
-    }
-
+    // Reset
     resetBtn.addEventListener("click", () => {
-      clearHold();
-      startedOnReset = false;
-      peekShownThisGesture = false;
-      noteContent.blur();
       noteContent.value = "";
-      lastOutCard = null;
-      lastOutShift = null;
-      clearArmed();
-      hidePeek();
-      lastComputedSnapshot = null;
-      isDirty = true;
+      noteContent.blur();
     });
 
-    toolbarBtn.addEventListener("pointerdown", onDown);
-    toolbarBtn.addEventListener("pointermove", onMove);
-    toolbarBtn.addEventListener("pointerup", onUpOrCancel);
-    toolbarBtn.addEventListener("pointercancel", onUpOrCancel);
+    // About open
+    aboutBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      aboutOverlay.style.display = "flex";
+    });
 
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/Notes/sw.js").catch(() => {});
-    }
+    // About close (tap outside)
+    aboutOverlay.addEventListener("click", (e) => {
+      if (e.target === aboutOverlay) {
+        aboutOverlay.style.display = "none";
+      }
+    });
+
+    // Prevent context menu on toolbar
+    document.querySelector(".toolbar").addEventListener("contextmenu", e => e.preventDefault());
   </script>
 </body>
 </html>
