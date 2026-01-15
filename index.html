@@ -61,18 +61,26 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    /* Dots layout */
+    /* Shared inner footprint for dots + peek */
+    :root{
+      --innerH: 18px; /* 4 + 2 + 4 + 2 + 4 = 16; keep 18 for comfortable centring */
+      --dot: 4px;
+      --gap: 2px;     /* tighter than 3px: brings top/bottom closer */
+    }
+
+    /* Dots layout (fixed footprint) */
     .dots {
+      height: var(--innerH);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 3px;
+      gap: var(--gap);
     }
 
     .vdot {
-      width: 4px;
-      height: 4px;
+      width: var(--dot);
+      height: var(--dot);
       border-radius: 50%;
       background: #5f6368;
       opacity: 0.65;
@@ -84,24 +92,34 @@
       opacity: 1;
     }
 
-    /* Peek layout – same container, same footprint */
+    /* Peek layout – FORCE same footprint as dots */
     .peek {
+      height: var(--innerH);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
+
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 13px;
+      font-size: 12px;     /* reduced so 3 lines fit within inner height */
       font-weight: 700;
-      line-height: 1;
+      line-height: 1;      /* critical: avoid extra leading */
       letter-spacing: 0.02em;
       color: #202124;
-      gap: 2px;
+
+      gap: 0;              /* no flex gap – we control spacing manually */
+    }
+
+    .peek .line {
+      display: block;
+      margin: 0;
+      padding: 0;
     }
 
     .peek .sep {
       opacity: 0.7;
       font-weight: 900;
+      transform: translateY(-1px); /* nudge to sit where the middle dot visually reads */
     }
 
     .note-area { padding: 20px; }
@@ -168,9 +186,9 @@
       if (!lastOutCard || lastOutShift == null) return;
       syncBtn.innerHTML = `
         <div class="peek">
-          <div>${lastOutCard}</div>
-          <div class="sep">·</div>
-          <div>${lastOutShift}</div>
+          <span class="line">${lastOutCard}</span>
+          <span class="line sep">·</span>
+          <span class="line">${lastOutShift}</span>
         </div>`;
     }
 
