@@ -79,16 +79,16 @@
       opacity: 0.65;
     }
 
-    /* Top dot success indicator (subtle) */
+    /* SUCCESS INDICATOR: TOP DOT */
     .calc-trigger.armed .vdot.top {
       background: #202124;
       opacity: 1;
     }
 
-    /* Peek anchored to arrow */
+    /* Peek anchored near arrow (nudged right) */
     .peek-arrow {
       position: absolute;
-      left: 15px;              /* aligns with arrow */
+      left: 24px;               /* ← nudged right from arrow head */
       top: 50%;
       transform: translateY(-50%);
       display: none;
@@ -106,12 +106,12 @@
 
     .peek-arrow .card {
       display: block;
-      margin-bottom: 6px;      /* above arrow */
+      margin-bottom: 9px;
     }
 
     .peek-arrow .shift {
       display: block;
-      margin-top: 6px;         /* below arrow */
+      margin-top: 9px;
     }
 
     .note-area { padding: 20px; }
@@ -136,7 +136,7 @@
   <div class="toolbar">
     <span class="back-arrow" id="resetBtn">←</span>
 
-    <!-- Peek above/below arrow -->
+    <!-- Peek above / below arrow -->
     <div class="peek-arrow" id="peekArrow">
       <span class="card" id="peekCard"></span>
       <span class="shift" id="peekShift"></span>
@@ -169,103 +169,104 @@
     let lastOutCard = null;
     let lastOutShift = null;
 
-    function setArmed(){ syncBtn.classList.add("armed"); }
-    function clearArmed(){ syncBtn.classList.remove("armed"); }
+    function setArmed() { syncBtn.classList.add("armed"); }
+    function clearArmed() { syncBtn.classList.remove("armed"); }
 
-    function showPeekArrow(){
+    function showPeekArrow() {
       if (!lastOutCard || lastOutShift == null) return;
       peekCard.textContent = lastOutCard;
       peekShift.textContent = lastOutShift;
       peekArrow.style.display = "block";
     }
 
-    function hidePeekArrow(){
+    function hidePeekArrow() {
       peekArrow.style.display = "none";
       peekCard.textContent = "";
       peekShift.textContent = "";
     }
 
-    function parseFirstInt(s){
+    function parseFirstInt(s) {
       const m = String(s ?? "").match(/-?\d+/);
-      return m ? parseInt(m[0],10) : NaN;
+      return m ? parseInt(m[0], 10) : NaN;
     }
 
-    function require1to52(n){
-      return Number.isFinite(n) && n>=1 && n<=52 ? n : NaN;
+    function require1to52(n) {
+      return Number.isFinite(n) && n >= 1 && n <= 52 ? n : NaN;
     }
 
-    function normaliseCard(input){
+    function normaliseCard(input) {
       if (!input) return null;
-      const raw = input.toUpperCase().replace(/\s+/g,"");
+      const raw = input.toUpperCase().replace(/\s+/g, "");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(raw)) return raw;
       return null;
     }
 
-    function positionAfterCut(op,bp){
-      const z=(op-bp-1)%52;
-      return (z<0?z+52:z)+1;
+    function positionAfterCut(op, bp) {
+      const z = (op - bp - 1) % 52;
+      return (z < 0 ? z + 52 : z) + 1;
     }
 
-    function compute(){
-      const lines = noteContent.value.split("\n").map(l=>l.trim()).filter(Boolean);
-      if (lines.length<2) return;
+    function compute() {
+      const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) return;
 
       const card = normaliseCard(lines[0]);
       const pos = require1to52(parseFirstInt(lines[1]));
       if (!card || isNaN(pos)) return;
 
       let cur;
-      if (lines[2]){
+      if (lines[2]) {
         const bottom = normaliseCard(lines[2]);
         if (!bottom) return;
         cur = positionAfterCut(stack.indexOf(card)+1, stack.indexOf(bottom)+1);
-        noteContent.value = lines.slice(0,2).join("\n")+"\n";
+        noteContent.value = lines.slice(0,2).join("\n") + "\n";
       } else {
         cur = stack.indexOf(card)+1;
       }
 
-      const diff = cur-pos;
-      if (diff===0){
-        lastOutCard="00";
-        lastOutShift="0";
+      const diff = cur - pos;
+      if (diff === 0) {
+        lastOutCard = "00";
+        lastOutShift = "0";
       } else {
-        let s=diff%52; if (s<0) s+=52;
-        lastOutCard=stack[s-1];
-        lastOutShift=String(s);
+        let s = diff % 52;
+        if (s < 0) s += 52;
+        lastOutCard = stack[s-1];
+        lastOutShift = String(s);
       }
       setArmed();
     }
 
-    syncBtn.addEventListener("click",()=>setTimeout(compute,180));
+    syncBtn.addEventListener("click", () => setTimeout(compute, 180));
 
-    resetBtn.addEventListener("click",()=>{
-      noteContent.value="";
-      lastOutCard=null;
-      lastOutShift=null;
+    resetBtn.addEventListener("click", () => {
+      noteContent.value = "";
+      lastOutCard = null;
+      lastOutShift = null;
       clearArmed();
       hidePeekArrow();
     });
 
-    let holdTimer=null;
-    const HOLD_MS=650;
+    let holdTimer = null;
+    const HOLD_MS = 650;
 
-    function holdStart(e){
-      if (e&&e.preventDefault) e.preventDefault();
-      holdTimer=setTimeout(showPeekArrow,HOLD_MS);
+    function holdStart(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      holdTimer = setTimeout(showPeekArrow, HOLD_MS);
     }
 
-    function holdEnd(){
+    function holdEnd() {
       clearTimeout(holdTimer);
       hidePeekArrow();
       clearArmed();
     }
 
-    titleBtn.addEventListener("mousedown",holdStart);
-    titleBtn.addEventListener("touchstart",holdStart,{passive:false});
-    titleBtn.addEventListener("mouseup",holdEnd);
-    titleBtn.addEventListener("mouseleave",holdEnd);
-    titleBtn.addEventListener("touchend",holdEnd);
-    titleBtn.addEventListener("touchcancel",holdEnd);
+    titleBtn.addEventListener("mousedown", holdStart);
+    titleBtn.addEventListener("touchstart", holdStart, { passive:false });
+    titleBtn.addEventListener("mouseup", holdEnd);
+    titleBtn.addEventListener("mouseleave", holdEnd);
+    titleBtn.addEventListener("touchend", holdEnd);
+    titleBtn.addEventListener("touchcancel", holdEnd);
   </script>
 </body>
 </html>
