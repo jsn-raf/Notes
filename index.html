@@ -79,8 +79,14 @@
       opacity: 0.65;
     }
 
-    /* SUCCESS INDICATOR: TOP DOT */
-    .calc-trigger.armed .vdot.top {
+    /* Armed indicator: top dot */
+    .calc-trigger.armed-top .vdot.top {
+      background: #202124;
+      opacity: 1;
+    }
+
+    /* Armed indicator: bottom dot */
+    .calc-trigger.armed-bottom .vdot.bottom {
       background: #202124;
       opacity: 1;
     }
@@ -88,7 +94,7 @@
     /* Peek anchored near arrow (nudged right) */
     .peek-arrow {
       position: absolute;
-      left: 24px;               /* ← nudged right from arrow head */
+      left: 24px;
       top: 50%;
       transform: translateY(-50%);
       display: none;
@@ -147,8 +153,8 @@
     <div class="calc-trigger" id="syncBtn" aria-label="More options">
       <div class="dots">
         <span class="vdot top"></span>
-        <span class="vdot"></span>
-        <span class="vdot"></span>
+        <span class="vdot mid"></span>
+        <span class="vdot bottom"></span>
       </div>
     </div>
   </div>
@@ -169,8 +175,16 @@
     let lastOutCard = null;
     let lastOutShift = null;
 
-    function setArmed() { syncBtn.classList.add("armed"); }
-    function clearArmed() { syncBtn.classList.remove("armed"); }
+    function clearArmed() {
+      syncBtn.classList.remove("armed-top");
+      syncBtn.classList.remove("armed-bottom");
+    }
+
+    function setArmed(which) {
+      clearArmed();
+      if (which === "bottom") syncBtn.classList.add("armed-bottom");
+      else syncBtn.classList.add("armed-top"); // default
+    }
 
     function showPeekArrow() {
       if (!lastOutCard || lastOutShift == null) return;
@@ -196,7 +210,7 @@
 
     function normaliseCard(input) {
       if (!input) return null;
-      const raw = input.toUpperCase().replace(/\s+/g, "");
+      const raw = input.toUpperCase().trim().replace(/\s+/g, "");
       if (/^(10|[2-9AJQK])[CDHS]$/.test(raw)) return raw;
       return null;
     }
@@ -214,10 +228,15 @@
       const pos = require1to52(parseFirstInt(lines[1]));
       if (!card || isNaN(pos)) return;
 
+      // Detect whether we actually used a valid third line
+      let usedThirdLine = false;
+
       let cur;
       if (lines[2]) {
         const bottom = normaliseCard(lines[2]);
-        if (!bottom) return;
+        if (!bottom) return;                 // invalid third line => do nothing
+        usedThirdLine = true;
+
         cur = positionAfterCut(stack.indexOf(card)+1, stack.indexOf(bottom)+1);
         noteContent.value = lines.slice(0,2).join("\n") + "\n";
       } else {
@@ -234,7 +253,9 @@
         lastOutCard = stack[s-1];
         lastOutShift = String(s);
       }
-      setArmed();
+
+      // Arm top dot normally, bottom dot when third line was used
+      setArmed(usedThirdLine ? "bottom" : "top");
     }
 
     syncBtn.addEventListener("click", () => setTimeout(compute, 180));
