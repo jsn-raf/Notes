@@ -45,6 +45,7 @@
       margin-left:20px;
       pointer-events:none;
     }
+
     .calc-trigger{
       position:absolute;
       right:6px;
@@ -70,7 +71,10 @@
       background:#5f6368;
       opacity:0.65;
     }
+
+    /* Armed indicators */
     .calc-trigger.armed-top .vdot.top{ background:#202124; opacity:1; }
+    .calc-trigger.armed-mid .vdot.mid{ background:#202124; opacity:1; }
     .calc-trigger.armed-bottom .vdot.bottom{ background:#202124; opacity:1; }
 
     .peek-arrow{
@@ -150,11 +154,14 @@
     let lastOutShift = null;
 
     function clearArmed() {
-      syncBtn.classList.remove("armed-top","armed-bottom");
+      syncBtn.classList.remove("armed-top","armed-mid","armed-bottom");
     }
-    function setArmed(usedCut) {
+    // mode: "top" | "mid" | "bottom"
+    function setArmedMode(mode) {
       clearArmed();
-      syncBtn.classList.add(usedCut ? "armed-bottom" : "armed-top");
+      if (mode === "mid") syncBtn.classList.add("armed-mid");
+      else if (mode === "bottom") syncBtn.classList.add("armed-bottom");
+      else syncBtn.classList.add("armed-top");
     }
 
     function showPeek() {
@@ -184,19 +191,11 @@
       FOUR:"4","4":"4",THREE:"3","3":"3",TWO:"2","2":"2"
     };
 
-    function normaliseCardStrict(line) {
-      // Must include suit cue + rank (in any supported variation)
-      const found = findCardInText(String(line ?? ""));
-      return found ? found.code : null;
-    }
-
     function findCardInText(text) {
       if (!text) return null;
-
       const raw = String(text);
 
       // 1) Compact: AS / 10H / with optional whitespace, suit symbols
-      // We'll match with indices so we can delete exact span if needed.
       const compactRe = /(10|[2-9AJQK])\s*([CDHS♠♥♦♣])/ig;
       let m;
       while ((m = compactRe.exec(raw)) !== null) {
@@ -209,7 +208,7 @@
         }
       }
 
-      // 2) Wordy: locate rank token + suit token anywhere; delete that span (between the two tokens)
+      // 2) Wordy: locate one rank token + one suit token anywhere
       const tokenRe = /[A-Za-z0-9♠♥♦♣]+/g;
       const tokens = [];
       let t;
@@ -219,13 +218,11 @@
 
       let suitTok = null;
       let rankTok = null;
-
       for (const tok of tokens) {
         if (!suitTok && suitMap[tok.upper]) suitTok = tok;
         if (!rankTok && rankMap[tok.upper]) rankTok = tok;
         if (suitTok && rankTok) break;
       }
-
       if (!suitTok || !rankTok) return null;
 
       const suit = suitMap[suitTok.upper];
@@ -236,6 +233,11 @@
       const start = Math.min(suitTok.start, rankTok.start);
       const end = Math.max(suitTok.end, rankTok.end);
       return { code, start, end, matched: raw.slice(start, end) };
+    }
+
+    function normaliseCardStrict(line) {
+      const found = findCardInText(String(line ?? ""));
+      return found ? found.code : null;
     }
 
     // --- Parsing: numbers (1–52) with span ---
@@ -250,7 +252,6 @@
       const s = String(line ?? "");
       if (!s.trim()) return null;
 
-      // Digits first: keep exact span of first digit group
       const d = /\d+/.exec(s);
       if (d) {
         const value = parseInt(d[0], 10);
@@ -259,8 +260,6 @@
         }
       }
 
-      // Words: match the first valid 1–52 phrase, prefer longest (two-token) match
-      // Supports: "twenty one" / "twenty-one" / "seventeen"
       const wordRe = /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)(?:[-\s]+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen))?\b/ig;
 
       let best = null;
@@ -276,22 +275,19 @@
 
         if (Number.isFinite(value) && value >= 1 && value <= 52) {
           const cand = { value, start: m.index, end: m.index + m[0].length, matched: m[0] };
-          // Prefer longer match; if equal, earliest
           if (!best || (cand.end - cand.start) > (best.end - best.start) || cand.start < best.start) {
             best = cand;
           }
         }
       }
-
       return best;
     }
 
-    // --- Helper: minimal surgical deletion (preserve number text exactly) ---
+    // --- Minimal surgical deletion (preserve number text) ---
     function removeSpanPreserveSpacing(original, start, end) {
       const before = original.slice(0, start);
       const after = original.slice(end);
 
-      // If we cut between two whitespace runs, collapse at the boundary only.
       const beforeEndsSpace = /\s$/.test(before);
       const afterStartsSpace = /^\s/.test(after);
 
@@ -299,9 +295,6 @@
       if (beforeEndsSpace && afterStartsSpace) {
         joined = before.replace(/\s+$/, " ") + after.replace(/^\s+/, "");
       }
-
-      // Do not normalise the whole string (keeps number phrase intact).
-      // Just trim trailing spaces/newlines introduced by deletion.
       joined = joined.replace(/[ \t]+$/g, "");
       return joined;
     }
@@ -312,10 +305,9 @@
       return (z < 0 ? z + 52 : z) + 1;
     }
 
-    // --- Compute (strict: line 1 card, line 2 number; optional cut on line 3 or after number on line 2) ---
+    // --- Compute ---
     function compute() {
-      const linesRaw = noteContent.value.split("\n");
-      const lines = linesRaw.map(l => l.trim()).filter(Boolean);
+      const lines = noteContent.value.split("\n").map(l => l.trim()).filter(Boolean);
       if (lines.length < 2) return;
 
       const line1 = lines[0];
@@ -328,40 +320,34 @@
       if (!posInfo) return;
       const targetPos = posInfo.value;
 
-      // Basic safety: ensure namedCard exists in stack
       const namedIdx = stack.indexOf(namedCard);
       if (namedIdx < 0) return;
 
       let cutCard = null;
-      let usedCut = false;
-      let cutFromLine3 = false;
-      let cutFromLine2 = false;
-      let cutSpanAbs = null; // absolute span in original line2
+      let cutSource = "none"; // "none" | "line2" | "line3"
+      let cutSpanAbs = null;
 
-      // Priority 1: line 3 cut card
+      // Priority 1: line 3 cut
       if (lines.length >= 3) {
         const c3 = normaliseCardStrict(lines[2]);
-        if (!c3) return; // strict: if they provide line 3 but it's invalid, do nothing
+        if (!c3) return;
         cutCard = c3;
-        usedCut = true;
-        cutFromLine3 = true;
+        cutSource = "line3";
       } else {
-        // Priority 2: cut card after the number on line 2 (only scan remainder AFTER number span)
+        // Priority 2: line 2 remainder AFTER number
         const remainder = line2.slice(posInfo.end);
         const found = findCardInText(remainder);
         if (found) {
           cutCard = found.code;
-          usedCut = true;
-          cutFromLine2 = true;
+          cutSource = "line2";
           cutSpanAbs = { start: posInfo.end + found.start, end: posInfo.end + found.end };
         }
       }
 
-      // Validate cutCard exists in stack if used
       let currentPos;
-      if (usedCut) {
+      if (cutCard) {
         const bottomIdx = stack.indexOf(cutCard);
-        if (bottomIdx < 0) return; // strict: invalid cut card -> do nothing
+        if (bottomIdx < 0) return;
         currentPos = positionAfterCut(namedIdx + 1, bottomIdx + 1);
       } else {
         currentPos = namedIdx + 1;
@@ -378,15 +364,18 @@
         lastOutShift = String(shift);
       }
 
-      // Cleanup text
-      if (cutFromLine3) {
+      // Cleanup note
+      if (cutSource === "line3") {
         noteContent.value = [lines[0], lines[1]].join("\n") + "\n";
-      } else if (cutFromLine2 && cutSpanAbs) {
+      } else if (cutSource === "line2" && cutSpanAbs) {
         const cleanedLine2 = removeSpanPreserveSpacing(line2, cutSpanAbs.start, cutSpanAbs.end);
         noteContent.value = [lines[0], cleanedLine2].join("\n") + "\n";
       }
 
-      setArmed(usedCut);
+      // Dot indicator: none=top, line2=mid, line3=bottom
+      if (cutSource === "line3") setArmedMode("bottom");
+      else if (cutSource === "line2") setArmedMode("mid");
+      else setArmedMode("top");
     }
 
     // --- Gestures: tap toolbar compute, hold toolbar peek; arrow reset ---
