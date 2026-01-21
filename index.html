@@ -46,6 +46,7 @@
       padding:8px 10px;
       margin:-8px -10px;
       z-index:3;
+      position:relative;
     }
 
     .title{
@@ -144,23 +145,28 @@
       padding:16px 16px 14px;
       box-shadow:0 6px 18px rgba(0,0,0,0.10);
       cursor:pointer;
+      text-align:left;
     }
 
     .about-card, .about-card *{
       user-select:none !important;
       -webkit-user-select:none !important;
       -webkit-touch-callout:none !important;
+      -webkit-tap-highlight-color:transparent !important;
+      -webkit-user-drag:none !important;
     }
 
     .about-title{
       font-size:14.5px;
       font-weight:500;
       margin:0 0 10px 0;
+      pointer-events:none;
     }
 
     .about-body{
       font-size:13.5px;
       line-height:1.45;
+      pointer-events:none;
     }
 
     .about-body p{ margin:0 0 10px 0; }
@@ -170,6 +176,7 @@
       font-size:12px;
       line-height:1.35;
       color:#6b7077;
+      pointer-events:none;
     }
   </style>
 </head>
@@ -208,8 +215,8 @@
       <div class="about-body">
         <p>
           A lightweight note-taking utility for quick capture. Clean layout focused on speed and clarity.
-          All content is stored locally on your device, with access available without setup or accounts.
-          Accessible offline and independent of network services. Nothing is shared or synced externally.
+          All content is stored locally on your device. Accessible without setup or accounts.
+          Nothing is shared or synced externally.
         </p>
         <div class="about-footer">
           Build 1.3-g4l4h4d · Jan 2026<br>
@@ -237,11 +244,12 @@
     const peekShift    = document.getElementById("peekShift");
 
     /* ===============================
-       Constants & configuration
+       Constants
     =============================== */
     const HOLD_MS = 650;
     const MOVE_TOL = 10;
 
+    // Mnemonica (as hard-coded in your build)
     const stack = [
       "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
       "QC","8H","6S","5S","9H","KC","2D","JH","3S","8S","6H","10C",
@@ -255,50 +263,111 @@
     =============================== */
     let lastOutCard = null;
     let lastOutShift = null;
+
     let lastComputedSnapshot = null;
     let isDirty = true;
 
     let holdTimer = null;
     let peekShownThisGesture = false;
     let startX = 0, startY = 0;
+
     let startedOnReset = false;
     let startedOnAbout = false;
 
     /* ===============================
-       Helpers (pure)
+       Parsing helpers
+       - Compact forms accept single-letter suits (AS, 10H, Q♣).
+       - Wordy forms require suit words or suit symbols (prevents "sd" false positives).
     =============================== */
-    const suitMap = {
-      SPADES:"S",SPADE:"S",S:"S","♠":"S",
-      HEARTS:"H",HEART:"H",H:"H","♥":"H",
-      DIAMONDS:"D",DIAMOND:"D",D:"D","♦":"D",
-      CLUBS:"C",CLUB:"C",C:"C","♣":"C"
-    };
-    const rankMap = {
-      ACE:"A",A:"A",KING:"K",K:"K",QUEEN:"Q",Q:"Q",JACK:"J",J:"J",
-      TEN:"10","10":"10",NINE:"9","9":"9",EIGHT:"8","8":"8",
-      SEVEN:"7","7":"7",SIX:"6","6":"6",FIVE:"5","5":"5",
-      FOUR:"4","4":"4",THREE:"3","3":"3",TWO:"2","2":"2"
+    const suitWordMap = {
+      SPADES:"S", SPADE:"S",
+      HEARTS:"H", HEART:"H",
+      DIAMONDS:"D", DIAMOND:"D",
+      CLUBS:"C", CLUB:"C"
     };
 
-    function findCardInText(text){
+    const rankWordMap = {
+      ACE:"A", KING:"K", QUEEN:"Q", JACK:"J",
+      TEN:"10", NINE:"9", EIGHT:"8", SEVEN:"7", SIX:"6",
+      FIVE:"5", FOUR:"4", THREE:"3", TWO:"2"
+    };
+
+    const suitSymbolMap = { "♠":"S","♥":"H","♦":"D","♣":"C" };
+
+    function findCardWithSpan(text) {
       if (!text) return null;
       const raw = String(text);
-      const compactRe = /(10|[2-9AJQK])\s*([CDHS♠♥♦♣])/ig;
+
+      // 1) Compact (with optional whitespace): "AS", "A S", "10H", "7♦"
+      const compact = /(10|[2-9AJQK])\s*([CDHS♠♥♦♣])/ig;
       let m;
-      while ((m = compactRe.exec(raw)) !== null) {
-        const r = m[1].toUpperCase();
-        const s = ({"♠":"S","♥":"H","♦":"D","♣":"C"}[m[2]] || m[2].toUpperCase());
+      while ((m = compact.exec(raw)) !== null) {
+        const r = String(m[1]).toUpperCase();
+        const suitRaw = String(m[2]);
+        const s = suitSymbolMap[suitRaw] || suitRaw.toUpperCase();
         const code = r + s;
-        if (/^(10|[2-9AJQK])[CDHS]$/.test(code)) return code;
+        if (/^(10|[2-9AJQK])[CDHS]$/.test(code)) {
+          return { code, start: m.index, end: m.index + m[0].length };
+        }
       }
-      return null;
+
+      // 2) Wordy token pairing (with real spans from token matches)
+      const tokenRe = /[A-Za-z0-9♠♥♦♣]+/g;
+      let tok;
+      let rank = null, suit = null;
+      let rankSpan = null, suitSpan = null;
+
+      while ((tok = tokenRe.exec(raw)) !== null) {
+        const token = tok[0];
+        const upper = token.toUpperCase();
+        const s = tok.index;
+        const e = s + token.length;
+
+        if (upper === "OF" || upper === "THE") continue;
+
+        if (!rank) {
+          if (rankWordMap[upper]) {
+            rank = rankWordMap[upper];
+            rankSpan = { start: s, end: e };
+          } else if (/^(10|[2-9])$/.test(upper)) {
+            rank = upper;
+            rankSpan = { start: s, end: e };
+          } else if (/^[AJQK]$/.test(upper)) {
+            rank = upper;
+            rankSpan = { start: s, end: e };
+          }
+        }
+
+        if (!suit) {
+          if (suitWordMap[upper]) {
+            suit = suitWordMap[upper];
+            suitSpan = { start: s, end: e };
+          } else if (suitSymbolMap[token]) {
+            suit = suitSymbolMap[token];
+            suitSpan = { start: s, end: e };
+          }
+        }
+
+        if (rank && suit) break;
+      }
+
+      if (!rank || !suit) return null;
+
+      const code = rank + suit;
+      if (!/^(10|[2-9AJQK])[CDHS]$/.test(code)) return null;
+
+      const start = Math.min(rankSpan.start, suitSpan.start);
+      const end   = Math.max(rankSpan.end, suitSpan.end);
+
+      return { code, start, end };
     }
 
-    function normaliseCard(line){
-      return findCardInText(String(line ?? ""));
+    function normaliseCard(text) {
+      const f = findCardWithSpan(text);
+      return f ? f.code : null;
     }
 
-    function normaliseNumberTextKeepLength(s){
+    function normaliseNumberTextKeepLength(s) {
       return String(s ?? "")
         .replace(/\u00A0/g, " ")
         .replace(/[\u2010-\u2014]/g, "-");
@@ -311,64 +380,149 @@
     };
     const tens = { TWENTY:20, THIRTY:30, FORTY:40, FIFTY:50 };
 
-    function findPositionInLine(line){
+    function findPositionSpan(line) {
       const s = normaliseNumberTextKeepLength(String(line ?? ""));
       if (!s.trim()) return null;
 
+      // Digits
       const d = /\d+/.exec(s);
       if (d) {
         const v = parseInt(d[0], 10);
-        if (v >= 1 && v <= 52) return v;
+        if (Number.isFinite(v) && v >= 1 && v <= 52) {
+          return { value: v, start: d.index, end: d.index + d[0].length };
+        }
+        return null;
       }
 
-      const re = /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)\b/ig;
+      // Words (supports "twenty one" / "twenty-one")
+      const re = /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)(?:[-\s]+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen))?\b/ig;
+      let best = null;
       let m;
       while ((m = re.exec(s)) !== null) {
-        const w = m[1].toUpperCase();
-        if (ones[w] != null) return ones[w];
-        if (tens[w] != null) return tens[w];
+        const a = String(m[1]).toUpperCase();
+        const b = m[2] ? String(m[2]).toUpperCase() : null;
+
+        let v = NaN;
+        if (ones[a] != null) v = ones[a];
+        else if (tens[a] != null && b && ones[b] != null) v = tens[a] + ones[b];
+        else if (tens[a] != null && !b) v = tens[a];
+
+        if (Number.isFinite(v) && v >= 1 && v <= 52) {
+          const cand = { value: v, start: m.index, end: m.index + m[0].length };
+          if (!best || (cand.end - cand.start) > (best.end - best.start)) best = cand;
+        }
       }
-      return null;
+      return best;
     }
 
-    function buildDeckNow(bottomCard){
+    function removeSpanPolished(orig, start, end) {
+      let before = orig.slice(0, start).replace(/\b(of|the)\b[\s\-]*$/i, "");
+      let after  = orig.slice(end).replace(/^[\s\-]*\b(of|the)\b/i, "");
+      return (before + after).replace(/\s{2,}/g, " ").replace(/[ \t]+$/g, "").trimEnd();
+    }
+
+    /* ===============================
+       Deck helpers
+    =============================== */
+    function buildDeckNow(bottomCard) {
       if (!bottomCard) return stack.slice();
       const bi = stack.indexOf(bottomCard);
       if (bi < 0) return null;
+      // Rotate so the supplied bottom card remains bottom (cycle preserved)
       return stack.slice(bi + 1).concat(stack.slice(0, bi + 1));
     }
 
     /* ===============================
-       Core logic
+       UI helpers
     =============================== */
-    function clearArmed(){
+    function clearArmed() {
       aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
     }
-    function setArmedMode(mode){
+    function setArmedMode(mode) {
       clearArmed();
       if (mode === "mid") aboutBtn.classList.add("armed-mid");
       else if (mode === "bottom") aboutBtn.classList.add("armed-bottom");
       else aboutBtn.classList.add("armed-top");
     }
 
-    function compute(){
+    function showPeek() {
+      if (!lastOutCard) return;
+      peekCard.textContent = lastOutCard;
+      peekShift.textContent = lastOutShift;
+      peekArrow.style.display = "block";
+    }
+    function hidePeek() {
+      peekArrow.style.display = "none";
+      peekCard.textContent = "";
+      peekShift.textContent = "";
+    }
+
+    function openAbout() {
+      hidePeek();
+      noteContent.blur();
+      document.body.classList.add("modal-open");
+      aboutOverlay.style.display = "flex";
+    }
+    function closeAbout() {
+      aboutOverlay.style.display = "none";
+      document.body.classList.remove("modal-open");
+    }
+    function aboutIsOpen() {
+      return aboutOverlay.style.display === "flex";
+    }
+
+    /* ===============================
+       Core compute
+       Inputs:
+       - Line 1: named card
+       - Line 2: position (1..52) optionally followed by bottom card (inline cut)
+       - Line 3: bottom card (preferred if present)
+       Deletions:
+       - If line 3 used: delete line 3 (keep lines 1–2 as typed)
+       - If inline used: delete only the card substring on line 2 (preserve number formatting)
+    =============================== */
+    function compute() {
       if (!isDirty && lastComputedSnapshot === noteContent.value) return;
 
-      const lines = noteContent.value.split("\n");
-      const cardLine = lines[0] ?? "";
-      const posLine  = lines[1] ?? "";
-      const bottomLine = lines[2] ?? "";
+      const raw = noteContent.value.split("\n");
+      const line1 = raw[0] ?? "";
+      const line2 = raw[1] ?? "";
+      const line3 = raw[2] ?? "";
 
-      const namedCard = normaliseCard(cardLine);
-      const targetPos = findPositionInLine(posLine);
-      if (!namedCard || !targetPos) return;
+      if (!line1.trim() || !line2.trim()) return;
 
-      let bottomCard = bottomLine.trim() ? normaliseCard(bottomLine) : null;
+      const namedCard = normaliseCard(line1);
+      const posSpan = findPositionSpan(line2);
+      if (!namedCard || !posSpan) return;
+
+      let bottomCard = null;
+      let mode = "top";
+      let inlineSpan = null;
+
+      // Prefer line 3 bottom card
+      if (line3.trim()) {
+        const b3 = normaliseCard(line3);
+        if (!b3) return; // invalid third line: do nothing
+        bottomCard = b3;
+        mode = "bottom";
+      } else {
+        // Inline bottom card: only scan after the number span
+        const remainder = line2.slice(posSpan.end);
+        const found = findCardWithSpan(remainder);
+        if (found) {
+          bottomCard = found.code;
+          mode = "mid";
+          inlineSpan = { s: posSpan.end + found.start, e: posSpan.end + found.end };
+        }
+      }
+
       const deckNow = buildDeckNow(bottomCard);
       if (!deckNow) return;
 
       const currentPos = deckNow.indexOf(namedCard) + 1;
-      const diff = currentPos - targetPos;
+      if (currentPos <= 0) return;
+
+      const diff = currentPos - posSpan.value;
 
       if (diff === 0) {
         lastOutCard = "00";
@@ -380,44 +534,25 @@
         lastOutShift = String(shift);
       }
 
-      setArmedMode(bottomCard ? "bottom" : "top");
+      // Apply deletions (but keep the user's number formatting unchanged)
+      if (mode === "bottom") {
+        noteContent.value = line1 + "\n" + line2;
+      } else if (mode === "mid" && inlineSpan) {
+        noteContent.value = line1 + "\n" + removeSpanPolished(line2, inlineSpan.s, inlineSpan.e);
+      }
+
+      setArmedMode(mode);
       lastComputedSnapshot = noteContent.value;
       isDirty = false;
     }
 
     /* ===============================
-       UI helpers
-    =============================== */
-    function showPeek(){
-      if (!lastOutCard) return;
-      peekCard.textContent = lastOutCard;
-      peekShift.textContent = lastOutShift;
-      peekArrow.style.display = "block";
-    }
-    function hidePeek(){
-      peekArrow.style.display = "none";
-      peekCard.textContent = "";
-      peekShift.textContent = "";
-    }
-
-    function openAbout(){
-      hidePeek();
-      noteContent.blur();
-      document.body.classList.add("modal-open");
-      aboutOverlay.style.display = "flex";
-    }
-    function closeAbout(){
-      aboutOverlay.style.display = "none";
-      document.body.classList.remove("modal-open");
-    }
-
-    function aboutIsOpen(){
-      return aboutOverlay.style.display === "flex";
-    }
-
-    /* ===============================
        Event wiring
     =============================== */
+    toolbarBtn.addEventListener("contextmenu", e => e.preventDefault());
+    aboutOverlay.addEventListener("contextmenu", e => e.preventDefault());
+    aboutCard.addEventListener("contextmenu", e => e.preventDefault());
+
     noteContent.addEventListener("input", () => {
       isDirty = true;
       lastOutCard = null;
@@ -426,20 +561,36 @@
       hidePeek();
     });
 
-    toolbarBtn.addEventListener("contextmenu", e => e.preventDefault());
+    // Dots: About only (never compute/peek)
+    ["pointerdown","pointerup","click"].forEach(evt => {
+      aboutBtn.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+    aboutBtn.addEventListener("click", () => {
+      aboutIsOpen() ? closeAbout() : openAbout();
+    });
 
+    // About closes on any tap (overlay or card)
+    aboutOverlay.addEventListener("click", (e) => { e.preventDefault(); closeAbout(); });
+    aboutCard.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); closeAbout(); });
+
+    // Toolbar: tap compute, hold peek
     toolbarBtn.addEventListener("pointerdown", (e) => {
       if (aboutIsOpen()) return;
 
-      startedOnReset = e.target.closest("#resetBtn");
-      startedOnAbout = e.target.closest("#aboutBtn");
+      startedOnReset = !!e.target.closest("#resetBtn");
+      startedOnAbout = !!e.target.closest("#aboutBtn");
       if (startedOnReset || startedOnAbout) return;
 
       noteContent.blur();
+
       peekShownThisGesture = false;
       startX = e.clientX;
       startY = e.clientY;
 
+      clearTimeout(holdTimer);
       holdTimer = setTimeout(() => {
         peekShownThisGesture = true;
         showPeek();
@@ -459,6 +610,11 @@
       if (aboutIsOpen()) return;
 
       clearTimeout(holdTimer);
+      holdTimer = null;
+
+      if (startedOnReset) { startedOnReset = false; return; }
+      if (startedOnAbout) { startedOnAbout = false; return; }
+
       if (peekShownThisGesture) {
         hidePeek();
         clearArmed();
@@ -468,30 +624,32 @@
       }
     });
 
+    toolbarBtn.addEventListener("pointercancel", () => {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+      hidePeek();
+    });
+
+    // Reset arrow
     resetBtn.addEventListener("click", () => {
       if (aboutIsOpen()) return;
-      noteContent.value = "";
+
+      clearTimeout(holdTimer);
+      holdTimer = null;
+
       noteContent.blur();
+      noteContent.value = "";
+
+      lastOutCard = null;
+      lastOutShift = null;
       clearArmed();
       hidePeek();
+
       lastComputedSnapshot = null;
       isDirty = true;
     });
 
-    ["pointerdown","pointerup","click"].forEach(evt => {
-      aboutBtn.addEventListener(evt, e => {
-        e.preventDefault();
-        e.stopPropagation();
-      });
-    });
-
-    aboutBtn.addEventListener("click", () => {
-      aboutIsOpen() ? closeAbout() : openAbout();
-    });
-
-    aboutOverlay.addEventListener("click", closeAbout);
-    aboutCard.addEventListener("click", closeAbout);
-
+    // Service worker
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/Notes/sw.js").catch(() => {});
     }
