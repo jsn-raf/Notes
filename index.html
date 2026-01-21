@@ -19,7 +19,6 @@
       -webkit-tap-highlight-color:transparent;
     }
 
-    /* Toolbar */
     .toolbar{
       background:#f5f6f7;
       padding:15px;
@@ -103,7 +102,6 @@
     .peek-arrow .card{ display:block; margin-bottom:9px; }
     .peek-arrow .shift{ display:block; margin-top:9px; }
 
-    /* Note */
     .note-area{ padding:20px; }
     .note-body{
       font-size:18px;
@@ -124,7 +122,6 @@
       pointer-events:none;
     }
 
-    /* About overlay */
     .about-overlay{
       position:fixed;
       inset:0;
@@ -175,7 +172,6 @@
 
 <body>
 
-  <!-- Toolbar -->
   <div class="toolbar" id="toolbarBtn">
     <span class="back-arrow" id="resetBtn">←</span>
 
@@ -195,12 +191,10 @@
     </div>
   </div>
 
-  <!-- Note -->
   <div class="note-area">
     <textarea id="noteContent" class="note-body" placeholder="Start typing…"></textarea>
   </div>
 
-  <!-- About -->
   <div class="about-overlay" id="aboutOverlay">
     <div class="about-card" id="aboutCard">
       <div class="about-title">Quick Notes</div>
@@ -221,16 +215,16 @@
   <script>
     "use strict";
 
-    const toolbarBtn   = document.getElementById("toolbarBtn");
-    const resetBtn     = document.getElementById("resetBtn");
-    const aboutBtn     = document.getElementById("aboutBtn");
+    const toolbarBtn = document.getElementById("toolbarBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const aboutBtn = document.getElementById("aboutBtn");
     const aboutOverlay = document.getElementById("aboutOverlay");
-    const aboutCard    = document.getElementById("aboutCard");
+    const aboutCard = document.getElementById("aboutCard");
 
-    const noteContent  = document.getElementById("noteContent");
-    const peekArrow    = document.getElementById("peekArrow");
-    const peekCard     = document.getElementById("peekCard");
-    const peekShift    = document.getElementById("peekShift");
+    const noteContent = document.getElementById("noteContent");
+    const peekArrow = document.getElementById("peekArrow");
+    const peekCard = document.getElementById("peekCard");
+    const peekShift = document.getElementById("peekShift");
 
     const HOLD_MS = 650;
     const MOVE_TOL = 10;
@@ -245,8 +239,8 @@
 
     let lastOutCard = null;
     let lastOutShift = null;
-    let isDirty = true;
     let lastSnapshot = null;
+    let isDirty = true;
 
     let holdTimer = null;
     let peeked = false;
@@ -257,106 +251,102 @@
     const rankWord = { ACE:"A",KING:"K",QUEEN:"Q",JACK:"J",TEN:"10",NINE:"9",EIGHT:"8",SEVEN:"7",SIX:"6",FIVE:"5",FOUR:"4",THREE:"3",TWO:"2" };
     const suitSym  = { "♠":"S","♥":"H","♦":"D","♣":"C" };
 
+    function clearDots(){
+      aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
+    }
+
     function findCardSpan(text){
       if(!text) return null;
-
-      const compact = /(10|[2-9AJQK])\s*([CDHS♠♥♦♣])/ig;
+      const compact=/(10|[2-9AJQK])\s*([CDHS♠♥♦♣])/ig;
       let m;
-      while((m = compact.exec(text))){
-        const r = m[1].toUpperCase();
-        const s = suitSym[m[2]] || m[2].toUpperCase();
-        const code = r+s;
+      while((m=compact.exec(text))){
+        const r=m[1].toUpperCase();
+        const s=suitSym[m[2]]||m[2].toUpperCase();
+        const code=r+s;
         if(/^(10|[2-9AJQK])[CDHS]$/.test(code))
-          return { code, start:m.index, end:m.index+m[0].length };
+          return{code,start:m.index,end:m.index+m[0].length};
       }
-
-      const tokenRe = /[A-Za-z0-9♠♥♦♣]+/g;
+      const tokenRe=/[A-Za-z0-9♠♥♦♣]+/g;
       let rank=null,suit=null,rs=null,ss=null,t;
       while((t=tokenRe.exec(text))){
         const u=t[0].toUpperCase();
-        if(!rank && (rankWord[u]||/^(10|[2-9])$/.test(u)||/^[AJQK]$/.test(u))){
-          rank = rankWord[u]||u; rs={s:t.index,e:t.index+t[0].length};
+        if(!rank&&(rankWord[u]||/^(10|[2-9])$/.test(u)||/^[AJQK]$/.test(u))){
+          rank=rankWord[u]||u;rs={s:t.index,e:t.index+t[0].length};
         }
-        if(!suit && (suitWord[u]||suitSym[t[0]])){
-          suit = suitWord[u]||suitSym[t[0]]; ss={s:t.index,e:t.index+t[0].length};
+        if(!suit&&(suitWord[u]||suitSym[t[0]])){
+          suit=suitWord[u]||suitSym[t[0]];ss={s:t.index,e:t.index+t[0].length};
         }
-        if(rank&&suit) break;
+        if(rank&&suit)break;
       }
-      if(!rank||!suit) return null;
-      const code = rank+suit;
-      if(!/^(10|[2-9AJQK])[CDHS]$/.test(code)) return null;
-      return { code, start:Math.min(rs.s,ss.s), end:Math.max(rs.e,ss.e) };
+      if(!rank||!suit)return null;
+      const code=rank+suit;
+      if(!/^(10|[2-9AJQK])[CDHS]$/.test(code))return null;
+      return{code,start:Math.min(rs.s,ss.s),end:Math.max(rs.e,ss.e)};
     }
 
     function findPositionSpan(line){
       const d=/\d+/.exec(line);
       if(d){
         const v=parseInt(d[0],10);
-        if(v>=1&&v<=52) return {v,start:d.index,end:d.index+d[0].length};
+        if(v>=1&&v<=52)return{v,start:d.index,end:d.index+d[0].length};
       }
       return null;
     }
 
     function buildDeck(bottom){
-      if(!bottom) return stack.slice();
+      if(!bottom)return stack.slice();
       const i=stack.indexOf(bottom);
-      if(i<0) return null;
+      if(i<0)return null;
       return stack.slice(i+1).concat(stack.slice(0,i+1));
     }
 
     function removeSpan(s,a,b){
-      return (s.slice(0,a)+s.slice(b)).replace(/\s{2,}/g," ").trimEnd();
+      return(s.slice(0,a)+s.slice(b)).replace(/\s{2,}/g," ").trimEnd();
     }
 
     function compute(){
-      if(!isDirty && lastSnapshot===noteContent.value) return;
-
+      if(!isDirty&&lastSnapshot===noteContent.value)return;
       const lines=noteContent.value.split("\n");
-      if(lines.length<2) return;
-
+      if(lines.length<2)return;
       const card=findCardSpan(lines[0]);
       const pos=findPositionSpan(lines[1]);
-      if(!card||!pos) return;
+      if(!card||!pos)return;
 
       let bottom=null,mode="top",span=null;
-
       if(lines[2]){
         const b=findCardSpan(lines[2]);
-        if(!b) return;
-        bottom=b.code; mode="bottom";
+        if(!b)return;
+        bottom=b.code;mode="bottom";
       }else{
         const rest=lines[1].slice(pos.end);
         const b=findCardSpan(rest);
-        if(b){ bottom=b.code; mode="mid"; span={s:pos.end+b.start,e:pos.end+b.end}; }
+        if(b){bottom=b.code;mode="mid";span={s:pos.end+b.start,e:pos.end+b.end};}
       }
 
       const deck=buildDeck(bottom);
-      if(!deck) return;
+      if(!deck)return;
 
       const cur=deck.indexOf(card.code)+1;
-      if(cur<=0) return;
+      if(cur<=0)return;
 
       const diff=cur-pos.v;
-      if(diff===0){ lastOutCard="00"; lastOutShift="0"; }
+      if(diff===0){lastOutCard="00";lastOutShift="0";}
       else{
-        let sh=diff%52; if(sh<0) sh+=52;
-        lastOutCard=deck[sh-1]; lastOutShift=""+sh;
+        let sh=diff%52;if(sh<0)sh+=52;
+        lastOutCard=deck[sh-1];lastOutShift=""+sh;
       }
 
-      if(mode==="bottom") noteContent.value=lines[0]+"\n"+lines[1];
-      if(mode==="mid"&&span) noteContent.value=lines[0]+"\n"+removeSpan(lines[1],span.s,span.e);
+      if(mode==="bottom")noteContent.value=lines[0]+"\n"+lines[1];
+      if(mode==="mid"&&span)noteContent.value=lines[0]+"\n"+removeSpan(lines[1],span.s,span.e);
 
-      aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
+      clearDots();
       aboutBtn.classList.add("armed-"+mode);
-
       lastSnapshot=noteContent.value;
       isDirty=false;
     }
 
     function showPeek(){
-      // Optional hardening: do not peek when note is blank
-      if(!noteContent.value.trim()) return;
-      if(!lastOutCard) return;
+      if(!noteContent.value.trim()||!lastOutCard)return;
       peekCard.textContent=lastOutCard;
       peekShift.textContent=lastOutShift;
       peekArrow.style.display="block";
@@ -369,14 +359,16 @@
     }
 
     function clearHoldAndPeek(pointerId){
-      if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; }
+      if(holdTimer){clearTimeout(holdTimer);holdTimer=null;}
       hidePeek();
-      peeked=false;
-
-      if(pointerId!=null){
-        try{ toolbarBtn.releasePointerCapture(pointerId); }catch(_){}
+      if(peeked){
+        clearDots();   // 🔹 FIX: clear dots after a completed peek
+        peeked=false;
       }
-      if(pointerId===activePointerId) activePointerId=null;
+      if(pointerId!=null){
+        try{toolbarBtn.releasePointerCapture(pointerId);}catch(_){}
+      }
+      if(pointerId===activePointerId)activePointerId=null;
     }
 
     function openAbout(){
@@ -395,7 +387,7 @@
       lastOutCard=null;
       lastOutShift=null;
       hidePeek();
-      aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
+      clearDots();
     });
 
     ["pointerdown","pointerup","click"].forEach(ev=>{
@@ -407,43 +399,39 @@
     aboutCard.addEventListener("click",e=>{e.stopPropagation();closeAbout();});
 
     toolbarBtn.addEventListener("pointerdown",(e)=>{
-      if(e.target.closest("#aboutBtn")||e.target.closest("#resetBtn")) return;
-
+      if(e.target.closest("#aboutBtn")||e.target.closest("#resetBtn"))return;
       activePointerId=e.pointerId;
-      try{ toolbarBtn.setPointerCapture(activePointerId); }catch(_){}
-
-      if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; }
-      hidePeek();
+      try{toolbarBtn.setPointerCapture(activePointerId);}catch(_){}
+      clearHoldAndPeek();
       peeked=false;
-
-      startX=e.clientX; startY=e.clientY;
-      holdTimer=setTimeout(()=>{ peeked=true; showPeek(); },HOLD_MS);
+      startX=e.clientX;startY=e.clientY;
+      holdTimer=setTimeout(()=>{peeked=true;showPeek();},HOLD_MS);
     });
 
     toolbarBtn.addEventListener("pointermove",(e)=>{
-      if(!holdTimer) return;
+      if(!holdTimer)return;
       if(Math.abs(e.clientX-startX)>MOVE_TOL||Math.abs(e.clientY-startY)>MOVE_TOL){
         clearHoldAndPeek(activePointerId);
       }
     });
 
     toolbarBtn.addEventListener("pointerup",(e)=>{
-      const wasPeeked = peeked;      // capture state BEFORE cleanup
+      const wasPeeked=peeked;
       clearHoldAndPeek(e.pointerId);
-      if(!wasPeeked) compute();      // tap computes; hold-peek does not
+      if(!wasPeeked)compute();
     });
 
-    toolbarBtn.addEventListener("pointercancel",(e)=>{ clearHoldAndPeek(e.pointerId); });
-    toolbarBtn.addEventListener("lostpointercapture",(e)=>{ clearHoldAndPeek(e.pointerId); });
-    document.addEventListener("visibilitychange",()=>{ if(document.hidden) clearHoldAndPeek(activePointerId); });
-    window.addEventListener("pagehide",()=>{ clearHoldAndPeek(activePointerId); });
+    toolbarBtn.addEventListener("pointercancel",(e)=>{clearHoldAndPeek(e.pointerId);});
+    toolbarBtn.addEventListener("lostpointercapture",(e)=>{clearHoldAndPeek(e.pointerId);});
+    document.addEventListener("visibilitychange",()=>{if(document.hidden)clearHoldAndPeek(activePointerId);});
+    window.addEventListener("pagehide",()=>{clearHoldAndPeek(activePointerId);});
 
     resetBtn.addEventListener("click",()=>{
       noteContent.value="";
       hidePeek();
-      lastOutCard=null;              // fix: clear cached output so blank holds show nothing
+      lastOutCard=null;
       lastOutShift=null;
-      aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
+      clearDots();
       isDirty=true;
       lastSnapshot=null;
     });
