@@ -33,7 +33,6 @@
       -webkit-user-select:none;
       -webkit-touch-callout:none;
     }
-
     .toolbar *{
       user-select:none !important;
       -webkit-user-select:none !important;
@@ -246,12 +245,13 @@
 
     let lastOutCard = null;
     let lastOutShift = null;
-    let lastSnapshot = null;
     let isDirty = true;
+    let lastSnapshot = null;
 
     let holdTimer = null;
     let peeked = false;
     let startX = 0, startY = 0;
+    let activePointerId = null;
 
     const suitWord = { SPADES:"S",HEARTS:"H",DIAMONDS:"D",CLUBS:"C",SPADE:"S",HEART:"H",DIAMOND:"D",CLUB:"C" };
     const rankWord = { ACE:"A",KING:"K",QUEEN:"Q",JACK:"J",TEN:"10",NINE:"9",EIGHT:"8",SEVEN:"7",SIX:"6",FIVE:"5",FOUR:"4",THREE:"3",TWO:"2" };
@@ -363,6 +363,14 @@
       peekArrow.style.display="none";
     }
 
+    function clearHoldAndPeek(pointerId){
+      if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; }
+      if(peeked){ hidePeek(); peeked=false; }
+      if(pointerId!=null){
+        try{ toolbarBtn.releasePointerCapture(pointerId); }catch(_){}
+      }
+    }
+
     function openAbout(){
       hidePeek();
       document.body.classList.add("modal-open");
@@ -378,30 +386,6 @@
       aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
     });
 
-    toolbarBtn.addEventListener("pointerdown",e=>{
-      if(e.target.closest("#aboutBtn")||e.target.closest("#resetBtn")) return;
-      startX=e.clientX; startY=e.clientY; peeked=false;
-      holdTimer=setTimeout(()=>{ peeked=true; showPeek(); },HOLD_MS);
-    });
-
-    toolbarBtn.addEventListener("pointermove",e=>{
-      if(!holdTimer) return;
-      if(Math.abs(e.clientX-startX)>MOVE_TOL||Math.abs(e.clientY-startY)>MOVE_TOL){
-        clearTimeout(holdTimer); holdTimer=null; hidePeek();
-      }
-    });
-
-    toolbarBtn.addEventListener("pointerup",()=>{
-      clearTimeout(holdTimer); holdTimer=null;
-      if(peeked) hidePeek(); else compute();
-    });
-
-    resetBtn.addEventListener("click",()=>{
-      noteContent.value=""; hidePeek();
-      aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
-      isDirty=true; lastSnapshot=null;
-    });
-
     ["pointerdown","pointerup","click"].forEach(ev=>{
       aboutBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();});
     });
@@ -409,6 +393,42 @@
     aboutBtn.addEventListener("click",()=>aboutOverlay.style.display==="flex"?closeAbout():openAbout());
     aboutOverlay.addEventListener("click",closeAbout);
     aboutCard.addEventListener("click",e=>{e.stopPropagation();closeAbout();});
+
+    toolbarBtn.addEventListener("pointerdown",(e)=>{
+      if(e.target.closest("#aboutBtn")||e.target.closest("#resetBtn")) return;
+
+      activePointerId=e.pointerId;
+      try{ toolbarBtn.setPointerCapture(activePointerId); }catch(_){}
+
+      clearHoldAndPeek();
+      peeked=false;
+      startX=e.clientX; startY=e.clientY;
+
+      holdTimer=setTimeout(()=>{ peeked=true; showPeek(); },HOLD_MS);
+    });
+
+    toolbarBtn.addEventListener("pointermove",(e)=>{
+      if(!holdTimer) return;
+      if(Math.abs(e.clientX-startX)>MOVE_TOL||Math.abs(e.clientY-startY)>MOVE_TOL){
+        clearHoldAndPeek(activePointerId);
+      }
+    });
+
+    toolbarBtn.addEventListener("pointerup",(e)=>{
+      clearHoldAndPeek(e.pointerId);
+      if(!peeked) compute();
+    });
+
+    toolbarBtn.addEventListener("pointercancel",(e)=>{ clearHoldAndPeek(e.pointerId); });
+    toolbarBtn.addEventListener("lostpointercapture",(e)=>{ clearHoldAndPeek(e.pointerId); });
+    document.addEventListener("visibilitychange",()=>{ if(document.hidden) clearHoldAndPeek(); });
+    window.addEventListener("pagehide",()=>{ clearHoldAndPeek(); });
+
+    resetBtn.addEventListener("click",()=>{
+      noteContent.value=""; hidePeek();
+      aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
+      isDirty=true; lastSnapshot=null;
+    });
 
     if("serviceWorker"in navigator){
       navigator.serviceWorker.register("/Notes/sw.js").catch(()=>{});
