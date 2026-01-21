@@ -362,7 +362,10 @@
     function clearHoldAndPeek(pointerId){
       if(holdTimer){clearTimeout(holdTimer);holdTimer=null;}
       hidePeek();
-      if(peeked){clearDots();peeked=false;}
+      if(peeked){
+        clearDots();
+        peeked=false;
+      }
       if(pointerId!=null){
         try{toolbarBtn.releasePointerCapture(pointerId);}catch(_){}
       }
@@ -400,7 +403,10 @@
     });
 
     aboutOverlay.addEventListener("click",closeAbout);
-    aboutCard.addEventListener("click",e=>{e.stopPropagation();closeAbout();});
+    aboutCard.addEventListener("click",e=>{
+      e.stopPropagation();
+      closeAbout();
+    });
 
     toolbarBtn.addEventListener("pointerdown",(e)=>{
       if(e.target.closest("#aboutBtn")||e.target.closest("#resetBtn"))return;
@@ -438,6 +444,12 @@
       clearDots();
       isDirty=true;
       lastSnapshot=null;
+      requestAnimationFrame(()=>{
+        noteContent.blur();
+        noteContent.scrollTop=0;
+        noteContent.scrollLeft=0;
+        if(noteContent.setSelectionRange)noteContent.setSelectionRange(0,0);
+      });
     });
 
     if("serviceWorker"in navigator){
