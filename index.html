@@ -19,9 +19,7 @@
       -webkit-tap-highlight-color:transparent;
     }
 
-    /* ===============================
-       Toolbar
-    =============================== */
+    /* Toolbar */
     .toolbar{
       background:#f5f6f7;
       padding:15px;
@@ -35,7 +33,6 @@
       -webkit-user-select:none;
       -webkit-touch-callout:none;
     }
-
     .toolbar *{
       user-select:none !important;
       -webkit-user-select:none !important;
@@ -106,11 +103,8 @@
     .peek-arrow .card{ display:block; margin-bottom:9px; }
     .peek-arrow .shift{ display:block; margin-top:9px; }
 
-    /* ===============================
-       Note
-    =============================== */
+    /* Note */
     .note-area{ padding:20px; }
-
     .note-body{
       font-size:18px;
       border:none;
@@ -130,9 +124,7 @@
       pointer-events:none;
     }
 
-    /* ===============================
-       About overlay
-    =============================== */
+    /* About overlay */
     .about-overlay{
       position:fixed;
       inset:0;
@@ -214,11 +206,11 @@
       <div class="about-title">Quick Notes</div>
       <div class="about-body">
         <p>
-          A basic note-taking utility.  
-          Clean layout with predictable behaviour.  
-          All content is stored locally on your device.  
-          Accessible without setup or accounts.  
-          Nothing beyond note editing is provided.
+          A simple note-taking utility.<br>
+          Clean layout with predictable behaviour.<br>
+          All content is stored locally on your device.<br>
+          Accessible without accounts.<br>
+          No additional features are included.
         </p>
         <div class="about-footer">
           Build 1.3-g4l4h4d · Jan 2026<br>
@@ -231,9 +223,6 @@
   <script>
     "use strict";
 
-    /* ===============================
-       DOM
-    =============================== */
     const toolbarBtn   = document.getElementById("toolbarBtn");
     const resetBtn     = document.getElementById("resetBtn");
     const aboutBtn     = document.getElementById("aboutBtn");
@@ -245,9 +234,6 @@
     const peekCard     = document.getElementById("peekCard");
     const peekShift    = document.getElementById("peekShift");
 
-    /* ===============================
-       Constants
-    =============================== */
     const HOLD_MS = 650;
     const MOVE_TOL = 10;
 
@@ -259,21 +245,15 @@
       "10D","6C","AH","9D"
     ];
 
-    /* ===============================
-       State
-    =============================== */
     let lastOutCard = null;
     let lastOutShift = null;
-    let isDirty = true;
     let lastSnapshot = null;
+    let isDirty = true;
 
     let holdTimer = null;
     let peeked = false;
     let startX = 0, startY = 0;
 
-    /* ===============================
-       Parsing helpers
-    =============================== */
     const suitWord = { SPADES:"S",HEARTS:"H",DIAMONDS:"D",CLUBS:"C",SPADE:"S",HEART:"H",DIAMOND:"D",CLUB:"C" };
     const rankWord = { ACE:"A",KING:"K",QUEEN:"Q",JACK:"J",TEN:"10",NINE:"9",EIGHT:"8",SEVEN:"7",SIX:"6",FIVE:"5",FOUR:"4",THREE:"3",TWO:"2" };
     const suitSym  = { "♠":"S","♥":"H","♦":"D","♣":"C" };
@@ -329,9 +309,6 @@
       return (s.slice(0,a)+s.slice(b)).replace(/\s{2,}/g," ").trimEnd();
     }
 
-    /* ===============================
-       Compute
-    =============================== */
     function compute(){
       if(!isDirty && lastSnapshot===noteContent.value) return;
 
@@ -377,9 +354,6 @@
       isDirty=false;
     }
 
-    /* ===============================
-       Peek / About / Events
-    =============================== */
     function showPeek(){
       if(!lastOutCard) return;
       peekCard.textContent=lastOutCard;
