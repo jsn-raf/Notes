@@ -354,21 +354,29 @@
     }
 
     function showPeek(){
+      // Optional hardening: do not peek when note is blank
+      if(!noteContent.value.trim()) return;
       if(!lastOutCard) return;
       peekCard.textContent=lastOutCard;
       peekShift.textContent=lastOutShift;
       peekArrow.style.display="block";
     }
+
     function hidePeek(){
       peekArrow.style.display="none";
+      peekCard.textContent="";
+      peekShift.textContent="";
     }
 
     function clearHoldAndPeek(pointerId){
       if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; }
-      if(peeked){ hidePeek(); peeked=false; }
+      hidePeek();
+      peeked=false;
+
       if(pointerId!=null){
         try{ toolbarBtn.releasePointerCapture(pointerId); }catch(_){}
       }
+      if(pointerId===activePointerId) activePointerId=null;
     }
 
     function openAbout(){
@@ -376,13 +384,17 @@
       document.body.classList.add("modal-open");
       aboutOverlay.style.display="flex";
     }
+
     function closeAbout(){
       aboutOverlay.style.display="none";
       document.body.classList.remove("modal-open");
     }
 
     noteContent.addEventListener("input",()=>{
-      isDirty=true; lastOutCard=null; hidePeek();
+      isDirty=true;
+      lastOutCard=null;
+      lastOutShift=null;
+      hidePeek();
       aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
     });
 
@@ -400,10 +412,11 @@
       activePointerId=e.pointerId;
       try{ toolbarBtn.setPointerCapture(activePointerId); }catch(_){}
 
-      clearHoldAndPeek();
+      if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; }
+      hidePeek();
       peeked=false;
-      startX=e.clientX; startY=e.clientY;
 
+      startX=e.clientX; startY=e.clientY;
       holdTimer=setTimeout(()=>{ peeked=true; showPeek(); },HOLD_MS);
     });
 
@@ -415,19 +428,24 @@
     });
 
     toolbarBtn.addEventListener("pointerup",(e)=>{
+      const wasPeeked = peeked;      // capture state BEFORE cleanup
       clearHoldAndPeek(e.pointerId);
-      if(!peeked) compute();
+      if(!wasPeeked) compute();      // tap computes; hold-peek does not
     });
 
     toolbarBtn.addEventListener("pointercancel",(e)=>{ clearHoldAndPeek(e.pointerId); });
     toolbarBtn.addEventListener("lostpointercapture",(e)=>{ clearHoldAndPeek(e.pointerId); });
-    document.addEventListener("visibilitychange",()=>{ if(document.hidden) clearHoldAndPeek(); });
-    window.addEventListener("pagehide",()=>{ clearHoldAndPeek(); });
+    document.addEventListener("visibilitychange",()=>{ if(document.hidden) clearHoldAndPeek(activePointerId); });
+    window.addEventListener("pagehide",()=>{ clearHoldAndPeek(activePointerId); });
 
     resetBtn.addEventListener("click",()=>{
-      noteContent.value=""; hidePeek();
+      noteContent.value="";
+      hidePeek();
+      lastOutCard=null;              // fix: clear cached output so blank holds show nothing
+      lastOutShift=null;
       aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
-      isDirty=true; lastSnapshot=null;
+      isDirty=true;
+      lastSnapshot=null;
     });
 
     if("serviceWorker"in navigator){
