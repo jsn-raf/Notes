@@ -140,7 +140,7 @@
   <div class="toolbar" id="toolbarBtn">
     <span class="back-arrow" id="resetBtn">←</span>
 
-    <div class="peek-arrow" id="peekArrow">
+    <div class="peek-arrow" id="peekArrow" aria-hidden="true">
       <span class="card" id="peekCard"></span>
       <span class="shift" id="peekShift"></span>
     </div>
@@ -189,9 +189,7 @@
       try {
         wakeLock = await navigator.wakeLock.request("screen");
         wakeLock.addEventListener("release", () => { wakeLock = null; });
-      } catch (_) {
-        // Unsupported/denied/OS policy – ignore.
-      }
+      } catch (_) {}
     }
 
     function enableWakeLockOnce() {
@@ -257,10 +255,43 @@
     };
     const tens = { TWENTY:20, THIRTY:30, FORTY:40, FOURTY:40, FIFTY:50 };
 
+    /* UI helpers */
     function clearDots(){
       aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
     }
+    function setDot(mode){
+      clearDots();
+      aboutBtn.classList.add("armed-" + mode);
+    }
 
+    function showPeek(){
+      if(!noteContent.value.trim() || !lastOutCard) return;
+      peekCard.textContent = lastOutCard;
+      peekShift.textContent = lastOutShift;
+      peekArrow.style.display = "block";
+      peekArrow.setAttribute("aria-hidden","false");
+    }
+    function hidePeek(){
+      peekArrow.style.display = "none";
+      peekArrow.setAttribute("aria-hidden","true");
+      peekCard.textContent = "";
+      peekShift.textContent = "";
+      /* Tiny improvement: do NOT clear dots here. */
+    }
+
+    /* Generic helpers */
+    function removeSpan(s,a,b){
+      return (s.slice(0,a) + s.slice(b)).replace(/\s{2,}/g," ").trimEnd();
+    }
+
+    function buildDeck(bottom){
+      if(!bottom) return stack.slice();
+      const i = stack.indexOf(bottom);
+      if(i < 0) return null;
+      return stack.slice(i + 1).concat(stack.slice(0, i + 1));
+    }
+
+    /* Find first card span in text: supports compact/symbol and word forms */
     function findCardSpan(text){
       if(!text) return null;
 
@@ -271,7 +302,7 @@
         const s = suitSym[m[2]] || m[2].toUpperCase();
         const code = r + s;
         if(/^(10|[2-9AJQK])[CDHS]$/.test(code))
-          return { code, start: m.index, end: m.index + m[0].length };
+          return { code, start: m.index, end: m.index + m[0].length, kind:"compact" };
       }
 
       const tokenRe = /[A-Za-z0-9♠♥♦♣]+/g;
@@ -292,37 +323,13 @@
 
       const code = rank + suit;
       if(!/^(10|[2-9AJQK])[CDHS]$/.test(code)) return null;
-
-      return { code, start: Math.min(rs.s, ss.s), end: Math.max(rs.e, ss.e) };
+      return { code, start: Math.min(rs.s, ss.s), end: Math.max(rs.e, ss.e), kind:"word" };
     }
 
-    function parseWordNumberTokens(arr, i){
-      const t0 = arr[i];
-      if(!t0) return null;
-
-      const w0 = t0.w;
-      if(units[w0] != null){
-        const v = units[w0];
-        if(v >= 1 && v <= 52) return { v, end: i };
-        return null;
-      }
-
-      if(tens[w0] != null){
-        let v = tens[w0];
-        let end = i;
-        const t1 = arr[i + 1];
-        if(t1 && units[t1.w] != null){
-          v += units[t1.w];
-          end = i + 1;
-        }
-        if(v >= 1 && v <= 52) return { v, end };
-        return null;
-      }
-
-      return null;
-    }
-
+    /* Find first position span in line: digits or word numbers */
     function findPositionSpan(line){
+      if(!line) return null;
+
       const d = /\d+/.exec(line);
       if(d){
         const v = parseInt(d[0], 10);
@@ -342,85 +349,196 @@
       for(let i = 0; i < toks.length; i++){
         const w = toks[i].w;
 
-        const expanded = w.split(" ");
-        if(expanded.length > 1){
-          const tmp = expanded.map(x => ({ w: x, start: toks[i].start, end: toks[i].end }));
-          const r = parseWordNumberTokens(tmp, 0);
-          if(r) return { v: r.v, start: toks[i].start, end: toks[i].end };
-        }
-
         if(units[w] != null){
           const v = units[w];
           if(v >= 1 && v <= 52) return { v, start: toks[i].start, end: toks[i].end };
         }
 
         if(tens[w] != null){
-          const r = parseWordNumberTokens(toks, i);
-          if(r) return { v: r.v, start: toks[i].start, end: toks[r.end].end };
+          let v = tens[w];
+          let end = toks[i].end;
+
+          const next = toks[i + 1];
+          if(next && units[next.w] != null){
+            v += units[next.w];
+            end = next.end;
+          }
+
+          if(v >= 1 && v <= 52) return { v, start: toks[i].start, end };
+        }
+
+        if(w.includes(" ")){
+          const parts = w.split(" ").filter(Boolean);
+          let v = 0;
+          for(const p of parts){
+            if(tens[p] != null) v += tens[p];
+            else if(units[p] != null) v += units[p];
+            else { v = 0; break; }
+          }
+          if(v >= 1 && v <= 52) return { v, start: toks[i].start, end: toks[i].end };
         }
       }
 
       return null;
     }
 
-    function buildDeck(bottom){
-      if(!bottom) return stack.slice();
-      const i = stack.indexOf(bottom);
-      if(i < 0) return null;
-      return stack.slice(i + 1).concat(stack.slice(0, i + 1));
+    /* Compact/symbol-only LAST card span in original text */
+    function findLastCompactCardSpan(text){
+      if(!text) return null;
+      const matches = [];
+      const re = /(10|[2-9AJQK])\s*([CDHS♠♥♦♣])/ig;
+      let m;
+      while((m = re.exec(text))){
+        const r = m[1].toUpperCase();
+        const s = suitSym[m[2]] || m[2].toUpperCase();
+        const code = r + s;
+        if(/^(10|[2-9AJQK])[CDHS]$/.test(code)){
+          matches.push({ code, start: m.index, end: m.index + m[0].length });
+        }
+      }
+      return matches.length ? matches[matches.length - 1] : null;
     }
 
-    function removeSpan(s,a,b){
-      return (s.slice(0,a) + s.slice(b)).replace(/\s{2,}/g," ").trimEnd();
+    /* Parse spectator input from first two non-empty lines:
+       - card+position in any order
+       - allows both on one line
+       - does NOT try to be clever if spectator adds extra text (you'll manage this)
+    */
+    function parseSpectator(rawLines){
+      const idxs = [];
+      for(let i = 0; i < rawLines.length && idxs.length < 2; i++){
+        if(String(rawLines[i] ?? "").trim() !== "") idxs.push(i);
+      }
+      if(idxs.length === 0) return null;
+
+      const l1i = idxs[0];
+      const l2i = idxs.length > 1 ? idxs[1] : null;
+
+      const l1 = String(rawLines[l1i] ?? "");
+      const l2 = l2i != null ? String(rawLines[l2i] ?? "") : "";
+
+      // try within line 1 first
+      let card = findCardSpan(l1);
+      let pos  = findPositionSpan(l1);
+
+      // if missing, try line 2
+      if(!card && l2i != null) card = findCardSpan(l2);
+      if(!pos  && l2i != null) pos  = findPositionSpan(l2);
+
+      if(!card || !pos) return null;
+
+      // also capture where we found them
+      const c1 = card && l1 && (findCardSpan(l1)?.code === card.code) ? findCardSpan(l1) : null;
+      const p1 = pos  && l1 && (findPositionSpan(l1)?.v === pos.v) ? findPositionSpan(l1) : null;
+
+      const c2 = (!c1 && l2i != null) ? findCardSpan(l2) : null;
+      const p2 = (!p1 && l2i != null) ? findPositionSpan(l2) : null;
+
+      return { cardCode: card.code, posValue: pos.v, l1i, l2i, l1, l2, c1, c2, p1, p2 };
     }
 
-    function showPeek(){
-      if(!noteContent.value.trim() || !lastOutCard) return;
-      peekCard.textContent = lastOutCard;
-      peekShift.textContent = lastOutShift;
-      peekArrow.style.display = "block";
+    /* Detect bottom (Option A supported):
+       1) line 3 (any valid card) => bottom dot, delete line 3
+       2) else inline operator bottom as LAST compact card token in line 1 or 2 => middle dot, delete just that token
+          - includes: "17" / "AS KD"
+          - includes: "AS 17 KD"
+          - includes duplicates where bottom == named (allowed)
+    */
+    function detectBottom(rawLines, spec){
+      // 1) explicit bottom line (3rd line)
+      if(rawLines.length >= 3 && String(rawLines[2] ?? "").trim() !== ""){
+        const b = findCardSpan(String(rawLines[2]));
+        if(!b) return null;
+        return { bottomCode: b.code, source: "bottom", delete: { type: "line3" } };
+      }
+
+      // Helper: decide whether a last compact card on this line is an operator bottom
+      function inlineBottomFromLine(lineText, lineIndex, usedCardSpan, usedPosSpan){
+        const last = findLastCompactCardSpan(lineText);
+        if(!last) return null;
+
+        // Must be at the end (ignoring trailing spaces)
+        const tailRe = new RegExp(String(last.code).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "i");
+        if(!tailRe.test(lineText)) return null;
+
+        // Remove spectator spans (if on this line) AND remove this last token,
+        // then confirm we can still parse one card + one number from spectator zone overall.
+        // This keeps it deterministic and supports "17" / "AS KD" and duplicates.
+        let scrub = lineText;
+
+        // remove last token first (higher index safe)
+        const withoutLast = removeSpan(scrub, last.start, last.end);
+
+        // now check that, in the overall two-line spectator zone, we can still parse card+pos
+        const tempLines = rawLines.slice();
+        tempLines[lineIndex] = withoutLast;
+        const tempSpec = parseSpectator(tempLines);
+        if(!tempSpec) return null;
+
+        // Accept as bottom (even if equals named card)
+        return { bottomCode: last.code, lineIndex, span: { s: last.start, e: last.end } };
+      }
+
+      // Prefer applying inline bottom on line 2 if it exists, else line 1
+      const candidates = [];
+
+      const l1 = String(rawLines[spec.l1i] ?? "");
+      const c1 = inlineBottomFromLine(l1, spec.l1i, spec.c1, spec.p1);
+      if(c1) candidates.push(c1);
+
+      if(spec.l2i != null){
+        const l2 = String(rawLines[spec.l2i] ?? "");
+        const c2 = inlineBottomFromLine(l2, spec.l2i, spec.c2, spec.p2);
+        if(c2) candidates.push(c2);
+      }
+
+      if(!candidates.length) return null;
+
+      // Prefer line 2
+      candidates.sort((a,b)=> (a.lineIndex === spec.l2i ? -1 : 1) - (b.lineIndex === spec.l2i ? -1 : 1));
+      const chosen = candidates[0];
+
+      return {
+        bottomCode: chosen.bottomCode,
+        source: "mid",
+        delete: { type: "span", lineIndex: chosen.lineIndex, span: chosen.span }
+      };
     }
 
-    function hidePeek(){
-      peekArrow.style.display = "none";
-      peekCard.textContent = "";
-      peekShift.textContent = "";
+    function applyDeletion(rawLines, del){
+      if(!del) return;
+
+      if(del.type === "line3"){
+        noteContent.value = String(rawLines[0] ?? "") + "\n" + String(rawLines[1] ?? "");
+        return;
+      }
+
+      if(del.type === "span"){
+        const i = del.lineIndex;
+        const line = String(rawLines[i] ?? "");
+        rawLines[i] = removeSpan(line, del.span.s, del.span.e);
+        noteContent.value = rawLines.join("\n");
+      }
     }
 
     function compute(){
       if(!isDirty && lastSnapshot === noteContent.value) return;
 
-      const lines = noteContent.value.split("\n");
-      if(lines.length < 2) return;
+      const rawLines = noteContent.value.split("\n");
 
-      const card = findCardSpan(lines[0]);
-      const pos = findPositionSpan(lines[1]);
-      if(!card || !pos) return;
+      const spec = parseSpectator(rawLines);
+      if(!spec) return;
 
-      let bottom = null, mode = "top", span = null;
+      const bottomInfo = detectBottom(rawLines, spec);
+      const bottomCode = bottomInfo ? bottomInfo.bottomCode : null;
 
-      if(lines[2]){
-        const b = findCardSpan(lines[2]);
-        if(!b) return;
-        bottom = b.code;
-        mode = "bottom";
-      }else{
-        const rest = lines[1].slice(pos.end);
-        const b = findCardSpan(rest);
-        if(b){
-          bottom = b.code;
-          mode = "mid";
-          span = { s: pos.end + b.start, e: pos.end + b.end };
-        }
-      }
-
-      const deck = buildDeck(bottom);
+      const deck = buildDeck(bottomCode);
       if(!deck) return;
 
-      const cur = deck.indexOf(card.code) + 1;
+      const cur = deck.indexOf(spec.cardCode) + 1;
       if(cur <= 0) return;
 
-      const diff = cur - pos.v;
+      const diff = cur - spec.posValue;
       if(diff === 0){
         lastOutCard = "00";
         lastOutShift = "0";
@@ -431,11 +549,15 @@
         lastOutShift = String(sh);
       }
 
-      if(mode === "bottom") noteContent.value = lines[0] + "\n" + lines[1];
-      if(mode === "mid" && span) noteContent.value = lines[0] + "\n" + removeSpan(lines[1], span.s, span.e);
+      // Apply deletion only on success
+      if(bottomInfo && bottomInfo.delete){
+        applyDeletion(rawLines, bottomInfo.delete);
+      }
 
-      clearDots();
-      aboutBtn.classList.add("armed-" + mode);
+      // Dots: top=no bottom, mid=inline bottom, bottom=line3 bottom
+      if(!bottomInfo) setDot("top");
+      else if(bottomInfo.source === "bottom") setDot("bottom");
+      else setDot("mid");
 
       lastSnapshot = noteContent.value;
       isDirty = false;
@@ -477,16 +599,14 @@
       document.body.classList.remove("modal-open");
     }
 
-    function clearHoldAndPeek(pointerId){
+    function clearHold(pointerId){
       if(holdTimer){
         clearTimeout(holdTimer);
         holdTimer = null;
       }
       hidePeek();
-      if(peeked){
-        clearDots();
-        peeked = false;
-      }
+      peeked = false;
+
       if(pointerId != null){
         try{ toolbarBtn.releasePointerCapture(pointerId); }catch(_){}
       }
@@ -514,14 +634,14 @@
     });
 
     toolbarBtn.addEventListener("pointerdown", (e)=>{
-      enableWakeLockOnce(); // keep screen awake (best-effort) after first interaction
+      enableWakeLockOnce();
 
       if(e.target.closest("#aboutBtn") || e.target.closest("#resetBtn")) return;
 
       activePointerId = e.pointerId;
       try{ toolbarBtn.setPointerCapture(activePointerId); }catch(_){}
 
-      clearHoldAndPeek();
+      clearHold();
       peeked = false;
 
       startX = e.clientX;
@@ -536,23 +656,23 @@
     toolbarBtn.addEventListener("pointermove", (e)=>{
       if(!holdTimer) return;
       if(Math.abs(e.clientX - startX) > MOVE_TOL || Math.abs(e.clientY - startY) > MOVE_TOL){
-        clearHoldAndPeek(activePointerId);
+        clearHold(activePointerId);
       }
     });
 
     toolbarBtn.addEventListener("pointerup", (e)=>{
       const wasPeeked = peeked;
-      clearHoldAndPeek(e.pointerId);
+      clearHold(e.pointerId);
       if(!wasPeeked) compute();
     });
 
-    toolbarBtn.addEventListener("pointercancel", (e)=>{ clearHoldAndPeek(e.pointerId); });
-    toolbarBtn.addEventListener("lostpointercapture", (e)=>{ clearHoldAndPeek(e.pointerId); });
+    toolbarBtn.addEventListener("pointercancel", (e)=>{ clearHold(e.pointerId); });
+    toolbarBtn.addEventListener("lostpointercapture", (e)=>{ clearHold(e.pointerId); });
 
     document.addEventListener("visibilitychange", ()=>{
-      if(document.hidden) clearHoldAndPeek(activePointerId);
+      if(document.hidden) clearHold(activePointerId);
     });
-    window.addEventListener("pagehide", ()=>{ clearHoldAndPeek(activePointerId); });
+    window.addEventListener("pagehide", ()=>{ clearHold(activePointerId); });
 
     resetBtn.addEventListener("click", ()=>{
       noteContent.value = "";
@@ -566,7 +686,7 @@
     });
 
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("/Notes/sw.js").catch(()=>{});
+      navigator.serviceWorker.register("/Notes/sw.js").catch(() => {});
     }
   </script>
 </body>
