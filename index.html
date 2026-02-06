@@ -180,6 +180,34 @@
   <script>
     "use strict";
 
+    /* Wake Lock (best-effort, no UI) */
+    let wakeLock = null;
+    let wakeLockEnabled = false;
+
+    async function requestWakeLock() {
+      if (!("wakeLock" in navigator)) return;
+      try {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      } catch (_) {
+        // Unsupported/denied/OS policy – ignore.
+      }
+    }
+
+    function enableWakeLockOnce() {
+      if (wakeLockEnabled) return;
+      wakeLockEnabled = true;
+      requestWakeLock();
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        if (wakeLockEnabled) requestWakeLock();
+      } else {
+        if (wakeLock) wakeLock.release().catch(() => {});
+      }
+    });
+
     /* Constants */
     const HOLD_MS = 650;
     const MOVE_TOL = 10;
@@ -486,6 +514,8 @@
     });
 
     toolbarBtn.addEventListener("pointerdown", (e)=>{
+      enableWakeLockOnce(); // keep screen awake (best-effort) after first interaction
+
       if(e.target.closest("#aboutBtn") || e.target.closest("#resetBtn")) return;
 
       activePointerId = e.pointerId;
