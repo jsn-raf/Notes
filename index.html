@@ -55,12 +55,16 @@
       align-items:center;
       justify-content:center;
       cursor:pointer;
+      user-select:none;
+      -webkit-user-select:none;
     }
     .dots{
       display:flex;
       flex-direction:column;
       align-items:center;
       gap:3px;
+      user-select:none;
+      -webkit-user-select:none;
     }
     .vdot{
       width:4px;
@@ -138,17 +142,17 @@
 
 <body>
   <div class="toolbar" id="toolbarBtn">
-    <span class="back-arrow" id="resetBtn">←</span>
+    <span class="back-arrow" id="resetBtn" aria-label="Back">←</span>
 
-    <div class="peek-arrow" id="peekArrow">
+    <div class="peek-arrow" id="peekArrow" aria-hidden="true">
       <span class="card" id="peekCard"></span>
       <span class="shift" id="peekShift"></span>
     </div>
 
     <span class="title">Quick Notes</span>
 
-    <div class="calc-trigger" id="aboutBtn">
-      <div class="dots">
+    <div class="calc-trigger" id="aboutBtn" aria-label="More options">
+      <div class="dots" aria-hidden="true">
         <span class="vdot top"></span>
         <span class="vdot mid"></span>
         <span class="vdot bottom"></span>
@@ -160,7 +164,477 @@
     <textarea id="noteContent" class="note-body" placeholder="Start typing…"></textarea>
   </div>
 
-  <!-- JS omitted for brevity in explanation — unchanged except for the regex fix -->
+  <div class="about-overlay" id="aboutOverlay" aria-hidden="true">
+    <div class="about-card" id="aboutCard">
+      <div class="about-title">Quick Notes</div>
+      <div class="about-body">
+        <p>
+          A simple note-taking utility. Clutter-free design.
+          All content is stored locally on your device. Account registration is not required.
+          No unnecessary features.
+        </p>
+        <div class="about-footer">
+          Build 1.3-g4l4h4d · Jan 2026<br>
+          © Jason Parry
+        </div>
+      </div>
+    </div>
+  </div>
 
+  <script>
+    "use strict";
+
+    /* Wake Lock (best-effort; only starts once the toolbar is used) */
+    let wakeLock = null;
+    let wakeLockEnabled = false;
+
+    async function requestWakeLock() {
+      if (!("wakeLock" in navigator)) return;
+      try {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      } catch (_) {}
+    }
+
+    function enableWakeLockOnce() {
+      if (wakeLockEnabled) return;
+      wakeLockEnabled = true;
+      requestWakeLock();
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        if (wakeLockEnabled) requestWakeLock();
+      } else {
+        if (wakeLock) wakeLock.release().catch(() => {});
+      }
+    });
+
+    /* Constants */
+    const HOLD_MS = 650;
+    const MOVE_TOL = 10;
+
+    /* DOM */
+    const toolbarBtn = document.getElementById("toolbarBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const aboutBtn = document.getElementById("aboutBtn");
+    const aboutOverlay = document.getElementById("aboutOverlay");
+    const aboutCard = document.getElementById("aboutCard");
+    const peekArrow = document.getElementById("peekArrow");
+    const peekCard = document.getElementById("peekCard");
+    const peekShift = document.getElementById("peekShift");
+    let noteContent = document.getElementById("noteContent");
+
+    /* Mnemonica stack (1–52) */
+    const stack = [
+      "4C","2H","7D","3C","4H","6D","AS","5H","9S","2S","QH","3D",
+      "QC","8H","6S","5S","9H","KC","2D","JH","3S","8S","6H","10C",
+      "5D","KD","2C","3H","8D","5C","KS","JD","8C","10S","KH","JC",
+      "7S","10H","AD","4S","7H","4D","AC","9C","JS","QD","7C","QS",
+      "10D","6C","AH","9D"
+    ];
+
+    /* State */
+    let lastOutCard = null;
+    let lastOutShift = null;
+    let lastSnapshot = null;
+    let isDirty = true;
+
+    let holdTimer = null;
+    let peeked = false;
+    let startX = 0, startY = 0;
+    let activePointerId = null;
+
+    /* Parsing maps */
+    const suitWord = { SPADES:"S",HEARTS:"H",DIAMONDS:"D",CLUBS:"C",SPADE:"S",HEART:"H",DIAMOND:"D",CLUB:"C" };
+    const rankWord = { ACE:"A",KING:"K",QUEEN:"Q",JACK:"J",TEN:"10",NINE:"9",EIGHT:"8",SEVEN:"7",SIX:"6",FIVE:"5",FOUR:"4",THREE:"3",TWO:"2" };
+    const suitSym  = { "♠":"S","♥":"H","♦":"D","♣":"C" };
+
+    const units = {
+      ONE:1, TWO:2, THREE:3, FOUR:4, FIVE:5, SIX:6, SEVEN:7, EIGHT:8, NINE:9,
+      TEN:10, ELEVEN:11, TWELVE:12, THIRTEEN:13, FOURTEEN:14, FIFTEEN:15,
+      SIXTEEN:16, SEVENTEEN:17, EIGHTEEN:18, NINETEEN:19
+    };
+    const tens = { TWENTY:20, THIRTY:30, FORTY:40, FOURTY:40, FIFTY:50 };
+
+    /* UI */
+    function clearDots(){
+      aboutBtn.classList.remove("armed-top","armed-mid","armed-bottom");
+    }
+    function setDot(mode){
+      clearDots();
+      aboutBtn.classList.add("armed-" + mode);
+    }
+
+    function showPeek(){
+      if(!noteContent.value.trim() || !lastOutCard) return;
+      peekCard.textContent = lastOutCard;
+      peekShift.textContent = lastOutShift;
+      peekArrow.style.display = "block";
+      peekArrow.setAttribute("aria-hidden","false");
+    }
+    function hidePeek(){
+      peekArrow.style.display = "none";
+      peekArrow.setAttribute("aria-hidden","true");
+      peekCard.textContent = "";
+      peekShift.textContent = "";
+      /* leave dots as-is */
+    }
+
+    function removeSpan(s,a,b){
+      return (s.slice(0,a) + s.slice(b)).replace(/\s{2,}/g," ").trimEnd();
+    }
+
+    function buildDeck(bottom){
+      if(!bottom) return stack.slice();
+      const i = stack.indexOf(bottom);
+      if(i < 0) return null;
+      return stack.slice(i + 1).concat(stack.slice(0, i + 1));
+    }
+
+    /* Boundary-safe compact matcher (no lookbehind; avoids "ACE" -> "AC") */
+    const COMPACT_RE = /(^|[^A-Z0-9])(10|[2-9AJQK])\s*([CDHS♠♥♦♣])(?![A-Z0-9])/ig;
+
+    function findCardSpan(text){
+      if(!text) return null;
+
+      COMPACT_RE.lastIndex = 0;
+      let m;
+      while((m = COMPACT_RE.exec(text))){
+        const prefixLen = m[1].length;
+        const r = m[2].toUpperCase();
+        const s = suitSym[m[3]] || m[3].toUpperCase();
+        const code = r + s;
+
+        if(/^(10|[2-9AJQK])[CDHS]$/.test(code)){
+          const start = m.index + prefixLen;
+          const end = start + m[2].length + (m[0].length - prefixLen - m[2].length); // includes suit + any whitespace
+          return { code, start, end, kind:"compact" };
+        }
+      }
+
+      const tokenRe = /[A-Za-z0-9♠♥♦♣]+/g;
+      let rank = null, suit = null, rs = null, ss = null, t;
+      while((t = tokenRe.exec(text))){
+        const u = t[0].toUpperCase();
+        if(!rank && (rankWord[u] || /^(10|[2-9])$/.test(u) || /^[AJQK]$/.test(u))){
+          rank = rankWord[u] || u;
+          rs = { s: t.index, e: t.index + t[0].length };
+        }
+        if(!suit && (suitWord[u] || suitSym[t[0]])){
+          suit = suitWord[u] || suitSym[t[0]];
+          ss = { s: t.index, e: t.index + t[0].length };
+        }
+        if(rank && suit) break;
+      }
+      if(!rank || !suit) return null;
+
+      const code = rank + suit;
+      if(!/^(10|[2-9AJQK])[CDHS]$/.test(code)) return null;
+      return { code, start: Math.min(rs.s, ss.s), end: Math.max(rs.e, ss.e), kind:"word" };
+    }
+
+    function findPositionSpan(line){
+      if(!line) return null;
+
+      const d = /\d+/.exec(line);
+      if(d){
+        const v = parseInt(d[0], 10);
+        if(v >= 1 && v <= 52) return { v, start: d.index, end: d.index + d[0].length };
+      }
+
+      const toks = [];
+      const re = /[A-Za-z]+(?:-[A-Za-z]+)*/g;
+      let m;
+      while((m = re.exec(line))){
+        const raw = m[0];
+        const parts = raw.split("-").filter(Boolean);
+        if(parts.length === 0) continue;
+        toks.push({ w: parts.join(" ").toUpperCase(), start: m.index, end: m.index + raw.length });
+      }
+
+      for(let i = 0; i < toks.length; i++){
+        const w = toks[i].w;
+
+        if(units[w] != null){
+          const v = units[w];
+          if(v >= 1 && v <= 52) return { v, start: toks[i].start, end: toks[i].end };
+        }
+
+        if(tens[w] != null){
+          let v = tens[w];
+          let end = toks[i].end;
+          const next = toks[i + 1];
+          if(next && units[next.w] != null){
+            v += units[next.w];
+            end = next.end;
+          }
+          if(v >= 1 && v <= 52) return { v, start: toks[i].start, end };
+        }
+      }
+
+      return null;
+    }
+
+    function findLastCompactCardSpan(text){
+      if(!text) return null;
+      const matches = [];
+      COMPACT_RE.lastIndex = 0;
+
+      let m;
+      while((m = COMPACT_RE.exec(text))){
+        const prefixLen = m[1].length;
+        const r = m[2].toUpperCase();
+        const s = suitSym[m[3]] || m[3].toUpperCase();
+        const code = r + s;
+
+        if(/^(10|[2-9AJQK])[CDHS]$/.test(code)){
+          const start = m.index + prefixLen;
+          const end = start + m[2].length + (m[0].length - prefixLen - m[2].length);
+          matches.push({ code, start, end });
+        }
+      }
+
+      return matches.length ? matches[matches.length - 1] : null;
+    }
+
+    function parseSpectator(rawLines){
+      const idxs = [];
+      for(let i = 0; i < rawLines.length && idxs.length < 2; i++){
+        if(String(rawLines[i] ?? "").trim() !== "") idxs.push(i);
+      }
+      if(idxs.length === 0) return null;
+
+      const l1i = idxs[0];
+      const l2i = idxs.length > 1 ? idxs[1] : null;
+
+      const l1 = String(rawLines[l1i] ?? "");
+      const l2 = l2i != null ? String(rawLines[l2i] ?? "") : "";
+
+      let card = findCardSpan(l1);
+      let pos  = findPositionSpan(l1);
+
+      if(!card && l2i != null) card = findCardSpan(l2);
+      if(!pos  && l2i != null) pos  = findPositionSpan(l2);
+
+      if(!card || !pos) return null;
+      return { cardCode: card.code, posValue: pos.v, l1i, l2i };
+    }
+
+    function detectBottom(rawLines, spec){
+      if(rawLines.length >= 3 && String(rawLines[2] ?? "").trim() !== ""){
+        const b = findCardSpan(String(rawLines[2]));
+        if(!b) return null;
+        return { bottomCode: b.code, source: "bottom", del: { type: "line3" } };
+      }
+
+      function inlineBottom(lineText, lineIndex){
+        const last = findLastCompactCardSpan(lineText);
+        if(!last) return null;
+
+        const tailRe = new RegExp(String(last.code).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "i");
+        if(!tailRe.test(lineText)) return null;
+
+        const tmp = rawLines.slice();
+        tmp[lineIndex] = removeSpan(lineText, last.start, last.end);
+        if(!parseSpectator(tmp)) return null;
+
+        return { bottomCode: last.code, lineIndex, span: { s:last.start, e:last.end } };
+      }
+
+      const candidates = [];
+      const l1 = String(rawLines[spec.l1i] ?? "");
+      const c1 = inlineBottom(l1, spec.l1i);
+      if(c1) candidates.push(c1);
+
+      if(spec.l2i != null){
+        const l2 = String(rawLines[spec.l2i] ?? "");
+        const c2 = inlineBottom(l2, spec.l2i);
+        if(c2) candidates.push(c2);
+      }
+
+      if(!candidates.length) return null;
+
+      candidates.sort((a,b)=> (a.lineIndex === spec.l2i ? -1 : 1) - (b.lineIndex === spec.l2i ? -1 : 1));
+      const chosen = candidates[0];
+
+      return { bottomCode: chosen.bottomCode, source: "mid", del: { type:"span", lineIndex:chosen.lineIndex, span:chosen.span } };
+    }
+
+    function applyDeletion(rawLines, del){
+      if(!del) return;
+
+      if(del.type === "line3"){
+        noteContent.value = String(rawLines[0] ?? "") + "\n" + String(rawLines[1] ?? "");
+        return;
+      }
+
+      if(del.type === "span"){
+        const i = del.lineIndex;
+        rawLines[i] = removeSpan(String(rawLines[i] ?? ""), del.span.s, del.span.e);
+        noteContent.value = rawLines.join("\n");
+      }
+    }
+
+    function compute(){
+      if(!isDirty && lastSnapshot === noteContent.value) return;
+
+      const rawLines = noteContent.value.split("\n");
+      const spec = parseSpectator(rawLines);
+      if(!spec) return;
+
+      const bottomInfo = detectBottom(rawLines, spec);
+      const deck = buildDeck(bottomInfo ? bottomInfo.bottomCode : null);
+      if(!deck) return;
+
+      const cur = deck.indexOf(spec.cardCode) + 1;
+      if(cur <= 0) return;
+
+      const diff = cur - spec.posValue;
+      if(diff === 0){
+        lastOutCard = "00";
+        lastOutShift = "0";
+      }else{
+        let sh = diff % 52;
+        if(sh < 0) sh += 52;
+        lastOutCard = deck[sh - 1];
+        lastOutShift = String(sh);
+      }
+
+      if(bottomInfo && bottomInfo.del) applyDeletion(rawLines, bottomInfo.del);
+
+      if(!bottomInfo) setDot("top");
+      else if(bottomInfo.source === "bottom") setDot("bottom");
+      else setDot("mid");
+
+      lastSnapshot = noteContent.value;
+      isDirty = false;
+    }
+
+    function onNoteInput(){
+      isDirty = true;
+      lastOutCard = null;
+      lastOutShift = null;
+      hidePeek();
+      clearDots();
+    }
+
+    function replaceTextarea(){
+      const old = noteContent;
+      const n = old.cloneNode(false);
+      n.value = "";
+      n.id = old.id;
+      n.className = old.className;
+      n.placeholder = old.placeholder;
+      old.parentNode.replaceChild(n, old);
+      noteContent = n;
+      noteContent.addEventListener("input", onNoteInput);
+      requestAnimationFrame(()=>{ noteContent.blur(); });
+    }
+
+    function openAbout(){
+      hidePeek();
+      if(noteContent && typeof noteContent.blur === "function") noteContent.blur();
+      document.body.classList.add("modal-open");
+      aboutOverlay.style.display = "flex";
+      aboutOverlay.setAttribute("aria-hidden","false");
+      requestAnimationFrame(()=>{ if(document.activeElement) document.activeElement.blur(); });
+    }
+
+    function closeAbout(){
+      aboutOverlay.style.display = "none";
+      aboutOverlay.setAttribute("aria-hidden","true");
+      document.body.classList.remove("modal-open");
+    }
+
+    function clearHold(pointerId){
+      if(holdTimer){
+        clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+      hidePeek();
+      peeked = false;
+
+      if(pointerId != null){
+        try{ toolbarBtn.releasePointerCapture(pointerId); }catch(_){}
+      }
+      if(pointerId === activePointerId) activePointerId = null;
+    }
+
+    /* Wiring */
+    noteContent.addEventListener("input", onNoteInput);
+
+    ["pointerdown","pointerup","click"].forEach(ev=>{
+      aboutBtn.addEventListener(ev, e=>{
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+
+    aboutBtn.addEventListener("click", ()=>{
+      if(aboutOverlay.style.display === "flex") closeAbout();
+      else openAbout();
+    });
+
+    aboutOverlay.addEventListener("click", closeAbout);
+    aboutCard.addEventListener("click", e=>{
+      e.stopPropagation();
+      closeAbout();
+    });
+
+    toolbarBtn.addEventListener("pointerdown", (e)=>{
+      enableWakeLockOnce();
+
+      if(e.target.closest("#aboutBtn") || e.target.closest("#resetBtn")) return;
+
+      activePointerId = e.pointerId;
+      try{ toolbarBtn.setPointerCapture(activePointerId); }catch(_){}
+
+      clearHold();
+      startX = e.clientX;
+      startY = e.clientY;
+
+      holdTimer = setTimeout(()=>{
+        peeked = true;
+        showPeek();
+      }, HOLD_MS);
+    });
+
+    toolbarBtn.addEventListener("pointermove", (e)=>{
+      if(!holdTimer) return;
+      if(Math.abs(e.clientX - startX) > MOVE_TOL || Math.abs(e.clientY - startY) > MOVE_TOL){
+        clearHold(activePointerId);
+      }
+    });
+
+    toolbarBtn.addEventListener("pointerup", (e)=>{
+      const wasPeeked = peeked;
+      clearHold(e.pointerId);
+      if(!wasPeeked) compute();
+    });
+
+    toolbarBtn.addEventListener("pointercancel", (e)=>{ clearHold(e.pointerId); });
+    toolbarBtn.addEventListener("lostpointercapture", (e)=>{ clearHold(e.pointerId); });
+
+    document.addEventListener("visibilitychange", ()=>{
+      if(document.hidden) clearHold(activePointerId);
+    });
+    window.addEventListener("pagehide", ()=>{ clearHold(activePointerId); });
+
+    resetBtn.addEventListener("click", ()=>{
+      noteContent.value = "";
+      hidePeek();
+      lastOutCard = null;
+      lastOutShift = null;
+      clearDots();
+      isDirty = true;
+      lastSnapshot = null;
+      requestAnimationFrame(()=>{ replaceTextarea(); });
+    });
+
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.register("/Notes/sw.js").catch(()=>{});
+    }
+  </script>
 </body>
 </html>
